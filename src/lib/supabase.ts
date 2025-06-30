@@ -68,4 +68,15 @@ export interface WaterLog {
   amount_ml: number
   logged_at?: string
   created_at?: string
+}
+
+export interface WeightLog {
+  id?: number
+  user_id: number
+  weight: number
+  weight_unit: 'lbs' | 'kg'
+  logged_date: string
+  notes?: string
+  created_at?: string
+  updated_at?: string
 } 

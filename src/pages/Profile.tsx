@@ -7,7 +7,11 @@ import { Badge } from "@/components/ui/badge"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Textarea } from "@/components/ui/textarea"
 import { 
   User, 
   Mail, 
@@ -20,13 +24,19 @@ import {
   Edit,
   Save,
   X,
-  RefreshCcw
+  RefreshCcw,
+  Plus,
+  Calendar as CalendarIcon,
+  TrendingUp,
+  TrendingDown
 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import Navigation from "@/components/Navigation"
-import { supabase } from "@/lib/supabase"
+import { supabase, type WeightLog } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { useNavigate } from "react-router-dom"
+import { format } from "date-fns"
+import { cn } from "@/lib/utils"
 
 interface UserProfile {
   name: string
@@ -63,6 +73,18 @@ export default function Profile() {
   })
 
   const [editedProfile, setEditedProfile] = useState<UserProfile>(profile)
+  
+  // Weight logging state
+  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([])
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [isWeightDialogOpen, setIsWeightDialogOpen] = useState(false)
+  const [editingWeightLog, setEditingWeightLog] = useState<WeightLog | null>(null)
+  const [newWeight, setNewWeight] = useState("")
+  const [newWeightUnit, setNewWeightUnit] = useState<'lbs' | 'kg'>("lbs")
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [weightNotes, setWeightNotes] = useState("")
+  const [isLoadingWeight, setIsLoadingWeight] = useState(false)
+  
   const { toast } = useToast()
   const navigate = useNavigate()
 
@@ -105,9 +127,12 @@ export default function Profile() {
 
       setProfile(userProfile)
       setEditedProfile(userProfile)
+      setCurrentUserId(data.id)
+      setNewWeightUnit(data.weight_unit as 'lbs' | 'kg')
       
-      // Load nutrition plan for this user
+      // Load nutrition plan and weight logs for this user
       await loadNutritionPlan(data.id)
+      await loadWeightLogs(data.id)
     } catch (error) {
       console.error('Error loading user data:', error)
       toast({
@@ -181,6 +206,17 @@ export default function Profile() {
         // Continue with deletion even if water logs deletion fails
       }
 
+      // Delete weight logs (due to foreign key constraint)
+      const { error: weightLogsError } = await supabase
+        .from('weight_logs')
+        .delete()
+        .eq('user_id', userData.id)
+
+      if (weightLogsError) {
+        console.warn('Error deleting weight logs:', weightLogsError)
+        // Continue with deletion even if weight logs deletion fails
+      }
+
       // Delete nutrition plan (due to foreign key constraint)
       const { error: planError } = await supabase
         .from('nutrition_plans')
@@ -250,6 +286,175 @@ export default function Profile() {
       }
     } catch (error) {
       console.error('Error loading nutrition plan:', error)
+    }
+  }
+
+  // Weight logging functions
+  const loadWeightLogs = async (userId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('weight_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('logged_date', { ascending: false })
+        .limit(10) // Load last 10 entries
+
+      if (error) throw error
+
+      setWeightLogs(data || [])
+    } catch (error) {
+      console.error('Error loading weight logs:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load weight history.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const openWeightDialog = (weightLog?: WeightLog) => {
+    if (weightLog) {
+      setEditingWeightLog(weightLog)
+      setNewWeight(weightLog.weight.toString())
+      setNewWeightUnit(weightLog.weight_unit)
+      setSelectedDate(new Date(weightLog.logged_date))
+      setWeightNotes(weightLog.notes || "")
+    } else {
+      setEditingWeightLog(null)
+      setNewWeight("")
+      setSelectedDate(new Date())
+      setWeightNotes("")
+    }
+    setIsWeightDialogOpen(true)
+  }
+
+  const closeWeightDialog = () => {
+    setIsWeightDialogOpen(false)
+    setEditingWeightLog(null)
+    setNewWeight("")
+    setWeightNotes("")
+    setSelectedDate(new Date())
+  }
+
+  const saveWeightLog = async () => {
+    if (!currentUserId || !newWeight || !selectedDate) return
+
+    try {
+      setIsLoadingWeight(true)
+      const weight = parseFloat(newWeight)
+      
+      if (isNaN(weight) || weight <= 0) {
+        toast({
+          title: "Invalid Weight",
+          description: "Please enter a valid weight value.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const loggedDate = format(selectedDate, 'yyyy-MM-dd')
+      
+      const weightData = {
+        user_id: currentUserId,
+        weight: weight,
+        weight_unit: newWeightUnit,
+        logged_date: loggedDate,
+        notes: weightNotes.trim() || null
+      }
+
+      if (editingWeightLog) {
+        // Update existing log
+        const { error } = await supabase
+          .from('weight_logs')
+          .update(weightData)
+          .eq('id', editingWeightLog.id)
+
+        if (error) throw error
+
+        toast({
+          title: "Success",
+          description: "Weight log updated successfully!",
+        })
+      } else {
+        // Create new log
+        const { error } = await supabase
+          .from('weight_logs')
+          .insert([weightData])
+
+        if (error) {
+          if (error.code === '23505') { // Unique constraint violation
+            toast({
+              title: "Date Already Logged",
+              description: "You already have a weight entry for this date. Please edit the existing entry or choose a different date.",
+              variant: "destructive",
+            })
+            return
+          }
+          throw error
+        }
+
+        toast({
+          title: "Success",
+          description: "Weight logged successfully!",
+        })
+      }
+
+      // Reload weight logs
+      await loadWeightLogs(currentUserId)
+      closeWeightDialog()
+
+    } catch (error) {
+      console.error('Error saving weight log:', error)
+      toast({
+        title: "Error",
+        description: "Failed to save weight log. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoadingWeight(false)
+    }
+  }
+
+  const deleteWeightLog = async (weightLogId: number) => {
+    if (!currentUserId) return
+
+    try {
+      const { error } = await supabase
+        .from('weight_logs')
+        .delete()
+        .eq('id', weightLogId)
+
+      if (error) throw error
+
+      toast({
+        title: "Success",
+        description: "Weight log deleted successfully!",
+      })
+
+      // Reload weight logs
+      await loadWeightLogs(currentUserId)
+
+    } catch (error) {
+      console.error('Error deleting weight log:', error)
+      toast({
+        title: "Error",
+        description: "Failed to delete weight log. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const getWeightTrend = () => {
+    if (weightLogs.length < 2) return null
+    
+    const latest = weightLogs[0]
+    const previous = weightLogs[1]
+    const diff = latest.weight - previous.weight
+    
+    return {
+      direction: diff > 0 ? 'up' : diff < 0 ? 'down' : 'same',
+      amount: Math.abs(diff),
+      unit: latest.weight_unit
     }
   }
 
@@ -547,6 +752,239 @@ export default function Profile() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Weight Logging */}
+        <Card className="mb-6 transition-all duration-300 hover:shadow-lg">
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <Scale className="h-5 w-5" />
+                <CardTitle>Weight Tracking</CardTitle>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openWeightDialog()}
+                className="hover:scale-105 transition-transform"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Log Weight
+              </Button>
+            </div>
+            <CardDescription>Track your weight progress over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {weightLogs.length > 0 ? (
+              <>
+                {/* Latest Weight & Trend */}
+                <div className="mb-6 p-4 bg-accent/20 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-2xl font-bold">
+                        {weightLogs[0].weight} {weightLogs[0].weight_unit}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Latest weight ({format(new Date(weightLogs[0].logged_date), 'MMM d, yyyy')})
+                      </p>
+                    </div>
+                    {getWeightTrend() && (
+                      <div className="flex items-center space-x-2">
+                        {getWeightTrend()?.direction === 'up' && (
+                          <TrendingUp className="h-5 w-5 text-red-500" />
+                        )}
+                        {getWeightTrend()?.direction === 'down' && (
+                          <TrendingDown className="h-5 w-5 text-green-500" />
+                        )}
+                        <span className={`text-sm font-medium ${
+                          getWeightTrend()?.direction === 'up' ? 'text-red-500' : 'text-green-500'
+                        }`}>
+                          {getWeightTrend()?.direction === 'up' ? '+' : '-'}{getWeightTrend()?.amount} {getWeightTrend()?.unit}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Weight History */}
+                <div className="space-y-3">
+                  <h4 className="font-medium">Recent Entries</h4>
+                  {weightLogs.map((log) => (
+                    <div key={log.id} className="flex items-center justify-between p-3 bg-background border rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3">
+                          <div>
+                            <p className="font-medium">{log.weight} {log.weight_unit}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {format(new Date(log.logged_date), 'MMM d, yyyy')}
+                            </p>
+                          </div>
+                          {log.notes && (
+                            <div className="text-sm text-muted-foreground max-w-xs truncate">
+                              "{log.notes}"
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openWeightDialog(log)}
+                          className="hover:scale-105 transition-transform"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="hover:scale-105 transition-transform text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Weight Entry</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete this weight entry? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => deleteWeightLog(log.id!)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-8">
+                <Scale className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">No weight entries yet</p>
+                <Button
+                  variant="outline"
+                  onClick={() => openWeightDialog()}
+                  className="hover:scale-105 transition-transform"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Log Your First Weight
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Weight Logging Dialog */}
+        <Dialog open={isWeightDialogOpen} onOpenChange={setIsWeightDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {editingWeightLog ? 'Edit Weight Entry' : 'Log Weight'}
+              </DialogTitle>
+              <DialogDescription>
+                {editingWeightLog 
+                  ? 'Update your weight entry and notes' 
+                  : 'Record your current weight with optional notes'
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {/* Weight Input */}
+              <div className="space-y-2">
+                <Label>Weight</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    placeholder="Enter weight"
+                    value={newWeight}
+                    onChange={(e) => setNewWeight(e.target.value)}
+                    className="flex-1"
+                    min="1"
+                    step="0.1"
+                  />
+                  <Select value={newWeightUnit} onValueChange={setNewWeightUnit}>
+                    <SelectTrigger className="w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lbs">lbs</SelectItem>
+                      <SelectItem value="kg">kg</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Date Selection */}
+              <div className="space-y-2">
+                <Label>Date</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !selectedDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(date) => date && setSelectedDate(date)}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-2">
+                <Label>Notes (Optional)</Label>
+                <Textarea
+                  placeholder="Any notes about your weight today..."
+                  value={weightNotes}
+                  onChange={(e) => setWeightNotes(e.target.value)}
+                  className="resize-none"
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={closeWeightDialog}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={saveWeightLog} 
+                disabled={!newWeight || isLoadingWeight}
+                className="hover:scale-105 transition-transform"
+              >
+                {isLoadingWeight ? (
+                  "Saving..."
+                ) : editingWeightLog ? (
+                  "Update Weight"
+                ) : (
+                  "Log Weight"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Account Actions */}
         <Card className="transition-all duration-300 hover:shadow-lg">
