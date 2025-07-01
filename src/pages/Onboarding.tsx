@@ -1,5 +1,4 @@
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -7,17 +6,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { User, Mail, Lock, Scale, Ruler, Activity, Target, ChevronRight, ChevronLeft } from "lucide-react"
+import { Scale, Ruler, Activity, Target, ChevronRight, ChevronLeft } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { supabase, type User as UserType, type NutritionPlan } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { generateNutritionPlan } from "@/lib/nutritionCalculator"
+import { AuthService, type AuthUser } from "@/lib/auth"
 
 interface OnboardingData {
-  name: string
-  email: string
-  password: string
   age: string
   gender: string
   height: string
@@ -31,7 +28,6 @@ interface OnboardingData {
 }
 
 const steps = [
-  { title: "Personal Info", icon: User },
   { title: "Health Metrics", icon: Scale },
   { title: "Activity Level", icon: Activity },
   { title: "Goals", icon: Target },
@@ -40,10 +36,8 @@ const steps = [
 export default function Onboarding() {
   const [currentStep, setCurrentStep] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [data, setData] = useState<OnboardingData>({
-    name: "",
-    email: "",
-    password: "",
     age: "",
     gender: "",
     height: "",
@@ -58,18 +52,43 @@ export default function Onboarding() {
   const navigate = useNavigate()
   const { toast } = useToast()
 
+  useEffect(() => {
+    // Check if user is authenticated
+    const checkAuthUser = async () => {
+      const user = await AuthService.getCurrentUser()
+      if (user) {
+        setAuthUser(user)
+      } else {
+        // Redirect to login if not authenticated
+        navigate("/login")
+      }
+    }
+    
+    checkAuthUser()
+  }, [navigate])
+
   const updateData = (field: keyof OnboardingData, value: string) => {
     setData(prev => ({ ...prev, [field]: value }))
   }
 
   const saveUserToSupabase = async () => {
+    if (!authUser) {
+      toast({
+        title: "Error",
+        description: "User not authenticated. Please login again.",
+        variant: "destructive",
+      })
+      navigate("/login")
+      return
+    }
+
     try {
       setIsLoading(true)
       
       // Convert data to match database schema
       const userData: Omit<UserType, 'id' | 'created_at' | 'updated_at'> = {
-        name: data.name,
-        email: data.email,
+        name: authUser.name || localStorage.getItem('tempUserName') || 'User',
+        email: authUser.email,
         age: parseInt(data.age),
         gender: data.gender,
         height: data.height,
@@ -82,15 +101,36 @@ export default function Onboarding() {
         timeline: data.timeline
       }
 
-      // Save user data first
-      const { data: userResult, error: userError } = await supabase
+      // Check if user already exists in our users table
+      const { data: existingUser, error: checkError } = await supabase
         .from('users')
-        .insert([userData])
-        .select()
+        .select('id')
+        .eq('email', authUser.email)
         .single()
 
-      if (userError) {
-        throw userError
+      let userId: number
+
+      if (existingUser) {
+        // Update existing user
+        const { data: updatedUser, error: updateError } = await supabase
+          .from('users')
+          .update(userData)
+          .eq('email', authUser.email)
+          .select()
+          .single()
+
+        if (updateError) throw updateError
+        userId = updatedUser.id
+      } else {
+        // Create new user
+        const { data: newUser, error: insertError } = await supabase
+          .from('users')
+          .insert([userData])
+          .select()
+          .single()
+
+        if (insertError) throw insertError
+        userId = newUser.id
       }
 
       // Generate nutrition plan
@@ -109,19 +149,37 @@ export default function Onboarding() {
 
       const nutritionPlan = generateNutritionPlan(calculationData)
 
-      // Save nutrition plan
+      // Check if nutrition plan already exists
+      const { data: existingPlan } = await supabase
+        .from('nutrition_plans')
+        .select('id')
+        .eq('user_id', userId)
+        .single()
+
       const planData: Omit<NutritionPlan, 'id' | 'created_at' | 'updated_at'> = {
-        user_id: userResult.id,
+        user_id: userId,
         ...nutritionPlan
       }
 
-      const { error: planError } = await supabase
-        .from('nutrition_plans')
-        .insert([planData])
+      if (existingPlan) {
+        // Update existing plan
+        const { error: updatePlanError } = await supabase
+          .from('nutrition_plans')
+          .update(planData)
+          .eq('user_id', userId)
 
-      if (planError) {
-        throw planError
+        if (updatePlanError) throw updatePlanError
+      } else {
+        // Create new plan
+        const { error: insertPlanError } = await supabase
+          .from('nutrition_plans')
+          .insert([planData])
+
+        if (insertPlanError) throw insertPlanError
       }
+
+      // Clean up temporary data
+      localStorage.removeItem('tempUserName')
 
       toast({
         title: "Welcome to NutriCoach AI!",
@@ -160,12 +218,10 @@ export default function Onboarding() {
   const isStepValid = () => {
     switch (currentStep) {
       case 0:
-        return data.name && data.email && data.password
-      case 1:
         return data.age && data.gender && data.height && data.weight
-      case 2:
+      case 1:
         return data.activityLevel
-      case 3:
+      case 2:
         return data.primaryGoal && (data.primaryGoal === "maintenance" || data.targetWeight) && data.timeline
       default:
         return false
@@ -175,53 +231,6 @@ export default function Onboarding() {
   const renderStep = () => {
     switch (currentStep) {
       case 0:
-        return (
-          <div className="space-y-6 animate-fade-in">
-            <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm font-medium">Full Name</Label>
-              <div className="relative">
-                <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="name"
-                  placeholder="Enter your full name"
-                  value={data.name}
-                  onChange={(e) => updateData("name", e.target.value)}
-                  className="pl-10 transition-all duration-200 focus:ring-2"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-sm font-medium">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email address"
-                  value={data.email}
-                  onChange={(e) => updateData("email", e.target.value)}
-                  className="pl-10 transition-all duration-200 focus:ring-2"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-sm font-medium">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Create a secure password"
-                  value={data.password}
-                  onChange={(e) => updateData("password", e.target.value)}
-                  className="pl-10 transition-all duration-200 focus:ring-2"
-                />
-              </div>
-            </div>
-          </div>
-        )
-
-      case 1:
         return (
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-2 gap-4">
@@ -296,7 +305,7 @@ export default function Onboarding() {
           </div>
         )
 
-      case 2:
+      case 1:
         return (
           <div className="space-y-6 animate-fade-in">
             <div>
@@ -322,7 +331,7 @@ export default function Onboarding() {
           </div>
         )
 
-      case 3:
+      case 2:
         return (
           <div className="space-y-6 animate-fade-in">
             <div className="space-y-4">
@@ -384,6 +393,17 @@ export default function Onboarding() {
     }
   }
 
+  // Show loading or redirect if no auth user
+  if (!authUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-accent/20 p-4">
+        <div className="text-center">
+          <p className="text-lg">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-accent/20 p-4">
       <div className="w-full max-w-md">
@@ -394,7 +414,7 @@ export default function Onboarding() {
         <Card className="shadow-xl border-0 bg-card/95 backdrop-blur">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              NutriCoach AI
+              Hi {authUser.name || 'there'}! 👋
             </CardTitle>
             <CardDescription>
               Step {currentStep + 1} of {steps.length}: {steps[currentStep].title}

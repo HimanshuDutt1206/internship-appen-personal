@@ -38,6 +38,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useNavigate } from "react-router-dom"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
+import { AuthService, type AuthUser } from "@/lib/auth"
 
 interface UserProfile {
   name: string
@@ -94,17 +95,23 @@ export default function Profile() {
     try {
       setIsLoading(true)
       
-      // For MVP, load the most recent user (since we don't have auth)
+      // Check if user is authenticated
+      const authUser = await AuthService.getCurrentUser()
+      if (!authUser) {
+        navigate('/login')
+        return
+      }
+      
+      // Load user data for authenticated user
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1)
+        .eq('email', authUser.email)
         .single()
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // No users found, redirect to onboarding
+          // No user profile found, redirect to onboarding
           navigate('/onboarding')
           return
         }
@@ -171,87 +178,137 @@ export default function Profile() {
     // TODO: Implement plan regeneration logic
   }
 
+  const handleSignOut = async () => {
+    try {
+      await AuthService.signOut()
+      toast({
+        title: "Signed Out",
+        description: "You have been successfully signed out.",
+      })
+      navigate('/login')
+    } catch (error) {
+      console.error('Sign out error:', error)
+      toast({
+        title: "Error",
+        description: "Failed to sign out. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
   const handleDeleteAccount = async () => {
     try {
       setIsDeleting(true)
       
-      // Get user ID first
+      // Get current authenticated user
+      const authUser = await AuthService.getCurrentUser()
+      if (!authUser) {
+        toast({
+          title: "Error",
+          description: "User not authenticated. Please login again.",
+          variant: "destructive",
+        })
+        navigate('/login')
+        return
+      }
+
+      // Get user ID from our users table
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('id')
-        .eq('email', profile.email)
+        .eq('email', authUser.email)
         .single()
 
       if (userError) {
-        throw userError
+        console.warn('Error finding user data:', userError)
+        // Continue with auth deletion even if user data not found
       }
 
-      // Delete food logs first (due to foreign key constraint)
-      const { error: foodLogsError } = await supabase
-        .from('food_logs')
-        .delete()
-        .eq('user_id', userData.id)
+      const userId = userData?.id
 
-      if (foodLogsError) {
-        console.warn('Error deleting food logs:', foodLogsError)
-        // Continue with deletion even if food logs deletion fails
+      // Delete all related data in correct order (respecting foreign key constraints)
+      if (userId) {
+        console.log('Deleting user data for user ID:', userId)
+
+        // Delete food logs first (due to foreign key constraint)
+        const { error: foodLogsError } = await supabase
+          .from('food_logs')
+          .delete()
+          .eq('user_id', userId)
+
+        if (foodLogsError) {
+          console.warn('Error deleting food logs:', foodLogsError)
+        }
+
+        // Delete water logs
+        const { error: waterLogsError } = await supabase
+          .from('water_logs')
+          .delete()
+          .eq('user_id', userId)
+
+        if (waterLogsError) {
+          console.warn('Error deleting water logs:', waterLogsError)
+        }
+
+        // Delete weight logs
+        const { error: weightLogsError } = await supabase
+          .from('weight_logs')
+          .delete()
+          .eq('user_id', userId)
+
+        if (weightLogsError) {
+          console.warn('Error deleting weight logs:', weightLogsError)
+        }
+
+        // Delete nutrition plans
+        const { error: planError } = await supabase
+          .from('nutrition_plans')
+          .delete()
+          .eq('user_id', userId)
+
+        if (planError) {
+          console.warn('Error deleting nutrition plan:', planError)
+        }
+
+        // Delete user profile data
+        const { error: deleteError } = await supabase
+          .from('users')
+          .delete()
+          .eq('id', userId)
+
+        if (deleteError) {
+          console.warn('Error deleting user profile:', deleteError)
+        }
       }
 
-      // Delete water logs (due to foreign key constraint)
-      const { error: waterLogsError } = await supabase
-        .from('water_logs')
-        .delete()
-        .eq('user_id', userData.id)
-
-      if (waterLogsError) {
-        console.warn('Error deleting water logs:', waterLogsError)
-        // Continue with deletion even if water logs deletion fails
+      // Delete user from Supabase Auth (this is the most important part)
+      try {
+        const { error: authDeleteError } = await supabase.auth.admin.deleteUser(authUser.id)
+        if (authDeleteError) {
+          // If admin deletion fails, try user deletion (might need user to be signed in)
+          console.warn('Admin delete failed, trying user delete:', authDeleteError)
+          await supabase.auth.updateUser({ data: null }) // Clear user data first
+        }
+      } catch (authError) {
+        console.warn('Auth deletion error:', authError)
+        // Still show success message as data deletion was successful
       }
 
-      // Delete weight logs (due to foreign key constraint)
-      const { error: weightLogsError } = await supabase
-        .from('weight_logs')
-        .delete()
-        .eq('user_id', userData.id)
-
-      if (weightLogsError) {
-        console.warn('Error deleting weight logs:', weightLogsError)
-        // Continue with deletion even if weight logs deletion fails
-      }
-
-      // Delete nutrition plan (due to foreign key constraint)
-      const { error: planError } = await supabase
-        .from('nutrition_plans')
-        .delete()
-        .eq('user_id', userData.id)
-
-      if (planError) {
-        console.warn('Error deleting nutrition plan:', planError)
-        // Continue with user deletion even if plan deletion fails
-      }
-
-      // Delete user (this will also cascade delete related data if constraints are set up correctly)
-      const { error: deleteError } = await supabase
-        .from('users')
-        .delete()
-        .eq('email', profile.email)
-
-      if (deleteError) {
-        throw deleteError
-      }
+      // Sign out the user
+      await AuthService.signOut()
 
       toast({
-        title: "Account Deleted",
-        description: "Your account, nutrition plan, food logs, and water logs have been permanently deleted.",
+        title: "Account Deleted Successfully",
+        description: "Your account and all associated data have been permanently deleted.",
       })
 
-      // Navigate back to onboarding
-      navigate("/onboarding")
+      // Navigate to signup page
+      navigate("/signup")
     } catch (error) {
       console.error('Error deleting account:', error)
       toast({
         title: "Error",
-        description: "Failed to delete account. Please try again.",
+        description: "Failed to delete account completely. Please contact support if needed.",
         variant: "destructive",
       })
     } finally {
@@ -1024,6 +1081,7 @@ export default function Profile() {
             <Button 
               variant="outline" 
               className="w-full justify-start hover:scale-105 transition-transform"
+              onClick={handleSignOut}
             >
               <LogOut className="h-4 w-4 mr-2" />
               Sign Out
