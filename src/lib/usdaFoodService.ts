@@ -78,7 +78,14 @@ class USDAFoodService {
     // Add params to URL
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
-        url.searchParams.append(key, value.toString())
+        // Handle arrays by adding multiple parameters with the same key
+        if (Array.isArray(value)) {
+          value.forEach(item => {
+            url.searchParams.append(key, item.toString())
+          })
+        } else {
+          url.searchParams.append(key, value.toString())
+        }
       }
     })
 
@@ -104,7 +111,7 @@ class USDAFoodService {
         pageNumber: 1,
         sortBy: 'dataType.keyword',
         sortOrder: 'asc',
-        dataType: ['Foundation', 'SR Legacy', 'Survey (FNDDS)', 'Branded'] // Include multiple data types
+        dataType: ['Foundation', 'SR Legacy', 'Branded'] // Simplified data types for better reliability
       })
 
       return response

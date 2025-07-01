@@ -28,7 +28,8 @@ import {
   Plus,
   Calendar as CalendarIcon,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Clock
 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import Navigation from "@/components/Navigation"
@@ -84,6 +85,7 @@ export default function Profile() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [weightNotes, setWeightNotes] = useState("")
   const [isLoadingWeight, setIsLoadingWeight] = useState(false)
+  const [showWeightLogs, setShowWeightLogs] = useState(false)
   
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -805,67 +807,90 @@ export default function Profile() {
                   </div>
                 </div>
 
-                {/* Weight History */}
-                <div className="space-y-3">
-                  <h4 className="font-medium">Recent Entries</h4>
-                  {weightLogs.map((log) => (
-                    <div key={log.id} className="flex items-center justify-between p-3 bg-background border rounded-lg">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3">
-                          <div>
-                            <p className="font-medium">{log.weight} {log.weight_unit}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {format(new Date(log.logged_date), 'MMM d, yyyy')}
-                            </p>
-                          </div>
-                          {log.notes && (
-                            <div className="text-sm text-muted-foreground max-w-xs truncate">
-                              "{log.notes}"
+                {/* Toggle Button for Weight History */}
+                <div className="mb-4 flex justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowWeightLogs(!showWeightLogs)}
+                    className="hover:scale-105 transition-transform"
+                  >
+                    {showWeightLogs ? (
+                      <>
+                        <Clock className="h-4 w-4 mr-2" />
+                        Hide Weight History
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="h-4 w-4 mr-2" />
+                        Show Weight History ({weightLogs.length} entries)
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Weight History - Only show when toggled */}
+                {showWeightLogs && (
+                  <div className="space-y-3">
+                    <h4 className="font-medium">Recent Entries</h4>
+                    {weightLogs.map((log) => (
+                      <div key={log.id} className="flex items-center justify-between p-3 bg-background border rounded-lg">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <div>
+                              <p className="font-medium">{log.weight} {log.weight_unit}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {format(new Date(log.logged_date), 'MMM d, yyyy')}
+                              </p>
                             </div>
-                          )}
+                            {log.notes && (
+                              <div className="text-sm text-muted-foreground max-w-xs truncate">
+                                "{log.notes}"
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openWeightDialog(log)}
+                            className="hover:scale-105 transition-transform"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="hover:scale-105 transition-transform text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Weight Entry</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete this weight entry? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteWeightLog(log.id!)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </div>
-                      <div className="flex space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openWeightDialog(log)}
-                          className="hover:scale-105 transition-transform"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="hover:scale-105 transition-transform text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Weight Entry</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete this weight entry? This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => deleteWeightLog(log.id!)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </>
             ) : (
               <div className="text-center py-8">
@@ -894,7 +919,7 @@ export default function Profile() {
               <DialogDescription>
                 {editingWeightLog 
                   ? 'Update your weight entry and notes' 
-                  : 'Record your current weight with optional notes'
+                  : 'Record your weight for today or a past date. Future dates are not allowed.'
                 }
               </DialogDescription>
             </DialogHeader>
@@ -927,7 +952,7 @@ export default function Profile() {
 
               {/* Date Selection */}
               <div className="space-y-2">
-                <Label>Date</Label>
+                <Label>Date (Today or Earlier)</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -946,6 +971,7 @@ export default function Profile() {
                       mode="single"
                       selected={selectedDate}
                       onSelect={(date) => date && setSelectedDate(date)}
+                      disabled={(date) => date > new Date()}
                       initialFocus
                     />
                   </PopoverContent>

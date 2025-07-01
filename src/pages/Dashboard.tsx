@@ -18,7 +18,8 @@ import {
   Wheat,
   Gauge,
   Trash2,
-  Clock
+  Clock,
+  User
 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import Navigation from "@/components/Navigation"
@@ -287,7 +288,7 @@ export default function Dashboard() {
       setTodaysWaterLogs(updatedLogs)
       setIntake(prev => ({ 
         ...prev, 
-        water: prev.water - amount 
+        water: Math.max(0, prev.water - amount) // Prevent negative values
       }))
 
       // If no more logs exist, automatically close the delete view
@@ -660,7 +661,10 @@ export default function Dashboard() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <Card className="transition-all duration-300 hover:shadow-lg hover:scale-105 cursor-pointer border-emerald-100 dark:border-emerald-900/50 hover:border-emerald-200 dark:hover:border-emerald-800">
+          <Card 
+            className="transition-all duration-300 hover:shadow-lg hover:scale-105 cursor-pointer border-emerald-100 dark:border-emerald-900/50 hover:border-emerald-200 dark:hover:border-emerald-800"
+            onClick={() => navigate('/food-logging')}
+          >
             <CardContent className="p-6 text-center">
               <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
                 <Apple className="h-8 w-8 text-emerald-500" />
@@ -670,7 +674,10 @@ export default function Dashboard() {
             </CardContent>
           </Card>
           
-          <Card className="transition-all duration-300 hover:shadow-lg hover:scale-105 cursor-pointer border-purple-100 dark:border-purple-900/50 hover:border-purple-200 dark:hover:border-purple-800">
+          <Card 
+            className="transition-all duration-300 hover:shadow-lg hover:scale-105 cursor-pointer border-purple-100 dark:border-purple-900/50 hover:border-purple-200 dark:hover:border-purple-800"
+            onClick={() => navigate('/progress')}
+          >
             <CardContent className="p-6 text-center">
               <div className="w-16 h-16 rounded-full bg-purple-100 dark:bg-purple-500/10 flex items-center justify-center mx-auto mb-4">
                 <TrendingUp className="h-8 w-8 text-purple-500" />
@@ -680,13 +687,16 @@ export default function Dashboard() {
             </CardContent>
           </Card>
           
-          <Card className="transition-all duration-300 hover:shadow-lg hover:scale-105 cursor-pointer border-sky-100 dark:border-sky-900/50 hover:border-sky-200 dark:hover:border-sky-800">
+          <Card 
+            className="transition-all duration-300 hover:shadow-lg hover:scale-105 cursor-pointer border-sky-100 dark:border-sky-900/50 hover:border-sky-200 dark:hover:border-sky-800"
+            onClick={() => navigate('/profile')}
+          >
             <CardContent className="p-6 text-center">
               <div className="w-16 h-16 rounded-full bg-sky-100 dark:bg-sky-500/10 flex items-center justify-center mx-auto mb-4">
-                <Target className="h-8 w-8 text-sky-500" />
+                <User className="h-8 w-8 text-sky-500" />
               </div>
-              <h3 className="font-semibold mb-2 text-sky-700 dark:text-sky-300">Adjust Goals</h3>
-              <p className="text-sm text-muted-foreground">Update your targets</p>
+              <h3 className="font-semibold mb-2 text-sky-700 dark:text-sky-300">View Profile</h3>
+              <p className="text-sm text-muted-foreground">Manage your account</p>
             </CardContent>
           </Card>
         </div>

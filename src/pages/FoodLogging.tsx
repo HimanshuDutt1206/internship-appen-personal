@@ -262,6 +262,25 @@ export default function FoodLogging() {
     portion: ""
   })
 
+  // Edit food states
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [editingFood, setEditingFood] = useState<FoodItem | null>(null)
+  const [editingMealType, setEditingMealType] = useState<keyof MealLog | null>(null)
+  const [editFood, setEditFood] = useState({
+    name: "",
+    calories: "",
+    protein: "",
+    carbs: "",
+    fats: "",
+    portion: ""
+  })
+  const [originalNutritionPer100g, setOriginalNutritionPer100g] = useState({
+    calories: 0,
+    protein: 0,
+    carbs: 0,
+    fats: 0
+  })
+
   const filteredFoods = sampleFoods.filter(food =>
     food.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
@@ -537,17 +556,68 @@ export default function FoodLogging() {
   }
 
   const addManualFood = async () => {
-    if (!manualFood.name || !manualFood.calories || !currentUserId) return
+    // Validate required fields
+    if (!manualFood.name.trim() || !manualFood.calories.trim() || !currentUserId) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a food name and calories.",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    // Parse and validate numeric values
+    const calories = parseInt(manualFood.calories)
+    const protein = manualFood.protein ? parseFloat(manualFood.protein) : 0
+    const carbs = manualFood.carbs ? parseFloat(manualFood.carbs) : 0
+    const fats = manualFood.fats ? parseFloat(manualFood.fats) : 0
+    
+    // Check for invalid numbers and ranges (based on database constraints)
+    if (isNaN(calories) || calories <= 0 || calories > 2000000000) {
+      toast({
+        title: "Value Out of Range",
+        description: "Calories must be between 1 and 2,000,000,000. Please enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    if (isNaN(protein) || protein < 0 || protein > 999.99) {
+      toast({
+        title: "Value Out of Range",
+        description: "Protein must be between 0 and 999.99 grams. Please enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    if (isNaN(carbs) || carbs < 0 || carbs > 999.99) {
+      toast({
+        title: "Value Out of Range",
+        description: "Carbs must be between 0 and 999.99 grams. Please enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    if (isNaN(fats) || fats < 0 || fats > 999.99) {
+      toast({
+        title: "Value Out of Range",
+        description: "Fats must be between 0 and 999.99 grams. Please enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
     
     try {
       const foodData: Omit<FoodLog, 'id' | 'logged_at' | 'created_at'> = {
         user_id: currentUserId,
-        name: manualFood.name,
-        calories: parseInt(manualFood.calories),
-        protein: parseFloat(manualFood.protein) || 0,
-        carbs: parseFloat(manualFood.carbs) || 0,
-        fats: parseFloat(manualFood.fats) || 0,
-        portion: manualFood.portion || "1 serving",
+        name: manualFood.name.trim(),
+        calories: Math.round(calories),
+        protein: Math.round(protein * 10) / 10, // Round to 1 decimal place
+        carbs: Math.round(carbs * 10) / 10,
+        fats: Math.round(fats * 10) / 10,
+        portion: manualFood.portion.trim() || "1 serving",
         meal_type: selectedMeal
       }
 
@@ -592,6 +662,183 @@ export default function FoodLogging() {
       toast({
         title: "Error",
         description: "Failed to add food. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Edit food functions
+  const parseQuantityFromPortion = (portion: string): number => {
+    // Extract number from portion string (e.g., "150g" -> 150, "2 cups" -> 2)
+    const match = portion.match(/(\d+(?:\.\d+)?)/);
+    return match ? parseFloat(match[1]) : 100; // Default to 100 if no number found
+  }
+
+  const calculateNutritionPer100g = (food: FoodItem): { calories: number, protein: number, carbs: number, fats: number } => {
+    const currentQuantity = parseQuantityFromPortion(food.portion)
+    // Calculate nutrition per 100g based on current portion
+    const factor = 100 / currentQuantity
+    return {
+      calories: Math.round(food.calories * factor),
+      protein: Math.round(food.protein * factor * 10) / 10,
+      carbs: Math.round(food.carbs * factor * 10) / 10,
+      fats: Math.round(food.fats * factor * 10) / 10
+    }
+  }
+
+  const recalculateNutritionFromPortion = (newPortion: string) => {
+    const newQuantity = parseQuantityFromPortion(newPortion)
+    const factor = newQuantity / 100 // Calculate factor from per-100g values
+    
+    setEditFood(prev => ({
+      ...prev,
+      portion: newPortion,
+      calories: Math.round(originalNutritionPer100g.calories * factor).toString(),
+      protein: (Math.round(originalNutritionPer100g.protein * factor * 10) / 10).toString(),
+      carbs: (Math.round(originalNutritionPer100g.carbs * factor * 10) / 10).toString(),
+      fats: (Math.round(originalNutritionPer100g.fats * factor * 10) / 10).toString()
+    }))
+  }
+
+  const handleEditFood = (food: FoodItem, mealType: keyof MealLog) => {
+    setEditingFood(food)
+    setEditingMealType(mealType)
+    
+    // Calculate and store original nutrition per 100g
+    const nutritionPer100g = calculateNutritionPer100g(food)
+    setOriginalNutritionPer100g(nutritionPer100g)
+    
+    setEditFood({
+      name: food.name,
+      calories: food.calories.toString(),
+      protein: food.protein.toString(),
+      carbs: food.carbs.toString(),
+      fats: food.fats.toString(),
+      portion: food.portion
+    })
+    setIsEditDialogOpen(true)
+  }
+
+  const updateFoodLog = async () => {
+    if (!editingFood || !editingMealType || !currentUserId) return
+
+    // Validate required fields
+    if (!editFood.name.trim() || !editFood.calories.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a food name and calories.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Parse and validate numeric values
+    const calories = parseInt(editFood.calories)
+    const protein = editFood.protein ? parseFloat(editFood.protein) : 0
+    const carbs = editFood.carbs ? parseFloat(editFood.carbs) : 0
+    const fats = editFood.fats ? parseFloat(editFood.fats) : 0
+
+    // Check for invalid numbers and ranges (based on database constraints)
+    if (isNaN(calories) || calories <= 0 || calories > 2000000000) {
+      toast({
+        title: "Value Out of Range",
+        description: "Calories must be between 1 and 2,000,000,000. Please enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (isNaN(protein) || protein < 0 || protein > 999.99) {
+      toast({
+        title: "Value Out of Range",
+        description: "Protein must be between 0 and 999.99 grams. Please enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (isNaN(carbs) || carbs < 0 || carbs > 999.99) {
+      toast({
+        title: "Value Out of Range",
+        description: "Carbs must be between 0 and 999.99 grams. Please enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (isNaN(fats) || fats < 0 || fats > 999.99) {
+      toast({
+        title: "Value Out of Range",
+        description: "Fats must be between 0 and 999.99 grams. Please enter a valid amount.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const updatedFoodData = {
+        name: editFood.name.trim(),
+        calories: Math.round(calories),
+        protein: Math.round(protein * 10) / 10,
+        carbs: Math.round(carbs * 10) / 10,
+        fats: Math.round(fats * 10) / 10,
+        portion: editFood.portion.trim() || "1 serving"
+      }
+
+      const { data, error } = await supabase
+        .from('food_logs')
+        .update(updatedFoodData)
+        .eq('id', parseInt(editingFood.id))
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Update local state
+      const updatedFood: FoodItem = {
+        id: editingFood.id,
+        name: data.name,
+        calories: data.calories,
+        protein: data.protein,
+        carbs: data.carbs,
+        fats: data.fats,
+        portion: data.portion
+      }
+
+      setMealLogs(prev => ({
+        ...prev,
+        [editingMealType]: prev[editingMealType].map(food => 
+          food.id === editingFood.id ? updatedFood : food
+        )
+      }))
+
+      // Refresh recent foods
+      if (currentUserId) {
+        await loadRecentFoods(currentUserId)
+      }
+
+      // Reset edit states
+      setIsEditDialogOpen(false)
+      setEditingFood(null)
+      setEditingMealType(null)
+      setEditFood({
+        name: "",
+        calories: "",
+        protein: "",
+        carbs: "",
+        fats: "",
+        portion: ""
+      })
+
+      toast({
+        title: "Success",
+        description: "Food updated successfully!",
+      })
+    } catch (error) {
+      console.error('Error updating food:', error)
+      toast({
+        title: "Error",
+        description: "Failed to update food. Please try again.",
         variant: "destructive",
       })
     }
@@ -798,7 +1045,12 @@ export default function FoodLogging() {
                               </div>
                             </div>
                             <div className="flex space-x-2">
-                              <Button size="icon" variant="ghost" className="h-8 w-8 hover:scale-110 transition-transform hover:bg-emerald-100 dark:hover:bg-emerald-900/50">
+                              <Button 
+                                size="icon" 
+                                variant="ghost" 
+                                className="h-8 w-8 hover:scale-110 transition-transform hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
+                                onClick={() => handleEditFood(food, mealType as keyof MealLog)}
+                              >
                                 <Edit className="h-4 w-4" />
                               </Button>
                               <Button 
@@ -940,7 +1192,7 @@ export default function FoodLogging() {
                   </div>
                   <div className="grid grid-cols-4 gap-4">
                     <div className="space-y-2">
-                      <Label>Calories</Label>
+                      <Label>Calories (kcal)</Label>
                       <Input
                         type="number"
                         value={manualFood.calories}
@@ -1179,6 +1431,104 @@ export default function FoodLogging() {
               className="hover:scale-105 transition-transform"
             >
               Add to {selectedMeal.charAt(0).toUpperCase() + selectedMeal.slice(1)}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Food Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Food</DialogTitle>
+            <DialogDescription>
+              Update the details for {editingFood?.name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Food Name</Label>
+                <Input
+                  value={editFood.name}
+                  onChange={(e) => setEditFood(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter food name"
+                />
+              </div>
+                             <div className="space-y-2">
+                 <Label>Portion Size</Label>
+                 <Input
+                   value={editFood.portion}
+                   onChange={(e) => recalculateNutritionFromPortion(e.target.value)}
+                   placeholder="1 serving, 100g, etc."
+                 />
+                 <p className="text-xs text-muted-foreground">
+                   Change quantity to auto-calculate nutrition (e.g., "150g", "2 cups")
+                 </p>
+               </div>
+            </div>
+                         <div className="space-y-2">
+               <div className="flex items-center space-x-2 mb-2">
+                 <Label className="text-sm font-medium">Nutrition Values</Label>
+                 <Badge variant="outline" className="text-xs bg-emerald-50 dark:bg-emerald-950 border-emerald-200 dark:border-emerald-800">
+                   Auto-calculated from portion
+                 </Badge>
+               </div>
+               <div className="grid grid-cols-4 gap-4">
+                 <div className="space-y-2">
+                   <Label className="text-sm">Calories (kcal)</Label>
+                   <Input
+                     type="number"
+                     value={editFood.calories}
+                     onChange={(e) => setEditFood(prev => ({ ...prev, calories: e.target.value }))}
+                     placeholder="0"
+                     className="bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
+                   />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-sm">Protein (g)</Label>
+                   <Input
+                     type="number"
+                     value={editFood.protein}
+                     onChange={(e) => setEditFood(prev => ({ ...prev, protein: e.target.value }))}
+                     placeholder="0"
+                     className="bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800"
+                   />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-sm">Carbs (g)</Label>
+                   <Input
+                     type="number"
+                     value={editFood.carbs}
+                     onChange={(e) => setEditFood(prev => ({ ...prev, carbs: e.target.value }))}
+                     placeholder="0"
+                     className="bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
+                   />
+                 </div>
+                 <div className="space-y-2">
+                   <Label className="text-sm">Fats (g)</Label>
+                   <Input
+                     type="number"
+                     value={editFood.fats}
+                     onChange={(e) => setEditFood(prev => ({ ...prev, fats: e.target.value }))}
+                     placeholder="0"
+                     className="bg-sky-50/50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-800"
+                   />
+                 </div>
+               </div>
+               <p className="text-xs text-muted-foreground mt-2">
+                 💡 Tip: Change the portion size above to automatically recalculate these values, or edit them manually
+               </p>
+             </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={updateFoodLog} className="hover:scale-105 transition-transform">
+              Update Food
             </Button>
           </DialogFooter>
         </DialogContent>
