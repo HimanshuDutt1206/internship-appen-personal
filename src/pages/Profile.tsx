@@ -970,7 +970,7 @@ export default function Profile() {
               <DialogDescription>
                 {editingWeightLog 
                   ? 'Update your weight entry and notes' 
-                  : 'Record your weight for today or a past date. Future dates are not allowed.'
+                  : 'Record your weight.'
                 }
               </DialogDescription>
             </DialogHeader>
@@ -1003,7 +1003,7 @@ export default function Profile() {
 
               {/* Date Selection */}
               <div className="space-y-2">
-                <Label>Date (Today or Earlier)</Label>
+                <Label>Date</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -1022,7 +1022,6 @@ export default function Profile() {
                       mode="single"
                       selected={selectedDate}
                       onSelect={(date) => date && setSelectedDate(date)}
-                      disabled={(date) => date > new Date()}
                       initialFocus
                     />
                   </PopoverContent>
