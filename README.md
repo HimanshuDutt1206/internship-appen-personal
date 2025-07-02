@@ -174,31 +174,6 @@ Before getting started, ensure you have:
 
    Navigate to `http://localhost:5173` in your browser
 
-## 🤖 Using AI Weight Predictions
-
-The AI weight prediction feature is one of NutriCoach AI's standout capabilities:
-
-### **How It Works**
-
-1. **Data Collection**: The AI analyzes your eating patterns, nutrition adherence, weight history, and goal progress
-2. **Intelligent Analysis**: Uses your BMR, TDEE, activity level, and actual calorie intake vs targets
-3. **Prediction Generation**: Creates realistic weight projections based on evidence-based calculations
-4. **Visual Display**: Shows predictions as an orange dotted line on your weight chart
-
-### **Getting Started**
-
-1. Complete the onboarding process and set your nutrition goals
-2. Log at least one weight entry in the Progress section
-3. Track your daily food and water intake for better accuracy
-4. Click "🤖 Predict Weight Progress" on the Progress page
-5. View your predictions and update them as you log more data
-
-### **What Makes It Accurate**
-
-- Considers your actual eating patterns, not just theoretical targets
-- Analyzes day-to-day consistency and adherence to nutrition goals
-- Factors in realistic weight change rates based on calorie deficits/surpluses
-- Starts predictions from your most recent logged weight
 
 ## 📁 Project Structure
 
