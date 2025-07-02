@@ -198,12 +198,20 @@ public/
 # ===================================
 # Ensure no API keys are committed
 **/api-keys/**
-**/secrets/**
-*.pem
-*.key
-*.crt
-*.p12
-*.keystore
+
+# Google AI Studio API Keys
+**/google-ai/**
+*.google-ai-key
+google-ai.json
+
+# USDA FoodData Central API Keys
+**/usda-api/**
+*.usda-key
+
+# Other external API keys
+**/external-apis/**
+*.api-key
+api-keys.json
 
 # ===================================
 # User-specific files

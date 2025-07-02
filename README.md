@@ -1,100 +1,49 @@
 # 🍎 NutriCoach AI - Smart Nutrition Tracking & Planning
 
-A modern, intelligent nutrition tracking and meal planning application built with React, TypeScript, and Supabase. NutriCoach AI helps users achieve their health and fitness goals through personalized nutrition plans, comprehensive food logging, and progress tracking.
+A comprehensive nutrition tracking and meal planning application that combines modern web technologies with AI-powered insights. Built with React, TypeScript, and Supabase, NutriCoach AI helps users achieve their health goals through personalized nutrition plans, detailed food logging, and intelligent weight progression predictions.
+
+## 📋 Overview
+
+NutriCoach AI is designed to simplify nutrition tracking while providing actionable insights for your health journey. The app features:
+
+- **Personalized nutrition planning** based on your goals, activity level, and body metrics
+- **Comprehensive food database** with over 1 million foods from USDA FoodData Central
+- **AI-powered weight predictions** using Google's Gemini 2.5 Flash model
+- **Real-time progress tracking** with interactive charts and analytics
+- **Modern, responsive design** that works seamlessly across all devices
+
+Whether you're looking to lose weight, gain muscle, or maintain a healthy lifestyle, NutriCoach AI provides the tools and insights you need to succeed.
 
 ## ✨ Features
 
-### 🔐 **Secure Authentication**
-
-- **Supabase Auth Integration** - Secure user registration and login
-- **Password Security** - Automatic password hashing and validation
-- **Session Management** - JWT-based authentication with automatic refresh
-- **Progressive Onboarding** - Guided setup flow for new users
-- **User Profile Management** - Complete account management with data deletion
-
-### 🎯 **Personalized Nutrition Planning**
-
-- **Smart BMR & TDEE Calculations** using Mifflin-St Jeor Formula
-- **Goal-Based Macro Distribution** (weight loss, muscle gain, maintenance)
-- **Intelligent Water Intake Targets** based on activity level and goals
-- **Multi-Unit Support** (metric/imperial measurements)
-- **One-Month Timeline** with sustainable, realistic targets
-
-### 📱 **Comprehensive Food Logging**
-
-- **USDA FoodData Central Integration** - Access to over 1 million foods from the official USDA database
-- **Smart Food Search** - Search and add foods with accurate nutrition data
-- **Flexible Quantity Selection** - Choose from grams, cups, tablespoons, pieces, or custom amounts
-- **Meal Category Tracking** (breakfast, lunch, dinner, snacks)
-- **Detailed Macro Breakdown** (calories, protein, carbs, fats, fiber, sugar, sodium)
-- **Real-Time Progress Monitoring** with visual progress bars
-- **Daily Nutrition Summary** with target comparisons
-- **Manual Food Entry** - Add custom foods when needed
-
-### 📊 **Progress Tracking & Analytics**
-
-- **Visual Progress Charts** using Recharts
-- **Weight Tracking** with historical data
-- **Daily Nutrition Analytics** with goal completion tracking
-- **Hydration Monitoring** with intake targets
-- **Weekly Goal Completion** metrics
-- **Streak Tracking** for consistency motivation
-
-### 🎨 **Modern User Experience**
-
-- **Dark/Light Theme Support** with system preference detection
-- **Mobile-First Responsive Design** optimized for all devices
-- **Smooth Animations** and transitions
-- **Intuitive Bottom Navigation** for easy access
-- **Progressive Onboarding Flow** with step-by-step guidance
-- **Row Level Security (RLS)** for data protection
+- **🔐 Authentication & User Management** - Secure Supabase Auth with progressive onboarding
+- **🎯 Smart Nutrition Planning** - BMR/TDEE calculations with personalized macro distribution
+- **🤖 AI Weight Predictions** - Gemini 2.5 Flash model for intelligent weight progression forecasts
+- **📱 Comprehensive Food Logging** - USDA database with 1M+ foods and flexible portion tracking
+- **📊 Progress Tracking & Analytics** - Interactive charts with daily/weekly analytics and trends
+- **🎨 Modern User Experience** - Dark/light themes, mobile-responsive design, smooth animations
 
 ## 🛠️ Tech Stack
 
-### **Frontend**
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui
+- **Backend**: Supabase (PostgreSQL, Auth, RLS, Real-time)
+- **AI & APIs**: Google AI Studio (Gemini 2.5 Flash), USDA FoodData Central
+- **Visualization**: Recharts, Lucide React icons
+- **Routing & Forms**: React Router DOM, React Hook Form
 
-- **React 18** - Modern React with hooks and concurrent features
-- **TypeScript** - Full type safety and enhanced developer experience
-- **Vite** - Fast build tool and dev server with HMR
-- **Tailwind CSS** - Utility-first styling framework
-- **shadcn/ui** - Modern component library built on Radix UI
-
-### **Backend & Database**
-
-- **Supabase** - PostgreSQL database with real-time features
-- **Supabase Auth** - User authentication and session management
-- **Row Level Security (RLS)** - Database-level security policies
-- **Real-time Subscriptions** - Live data updates
-
-### **State Management & Routing**
-
-- **TanStack Query** - Server state management and caching
-- **React Router DOM** - Client-side routing with navigation guards
-- **React Hook Form** - Form state management with validation
-- **Zod** - Runtime type validation
-
-### **UI & Visualization**
-
-- **Recharts** - Data visualization and interactive charts
-- **Lucide React** - Beautiful and consistent icon system
-- **Radix UI** - Accessible component primitives
-- **next-themes** - Theme management with system preference detection
-
-### **External APIs**
-
-- **USDA FoodData Central** - Official nutrition database with 1M+ foods
-- **RESTful API Integration** - Efficient data fetching and caching
-
-## 🚀 Quick Start
+## 🚀 Setup & Installation
 
 ### **Prerequisites**
 
-- **Node.js** (v18 or higher) - [Download here](https://nodejs.org/)
-- **npm** or **yarn** package manager
-- **Supabase Account** - [Create account](https://supabase.com/)
-- **USDA API Key** - [Get free key](https://api.data.gov/signup/)
+Before getting started, ensure you have:
 
-### **Installation**
+- **Node.js** (version 18 or higher) - [Download here](https://nodejs.org/)
+- **npm** or **yarn** package manager
+- **Supabase account** - [Sign up here](https://supabase.com/)
+- **USDA API key** - [Get free key](https://api.data.gov/signup/) (or use `DEMO_KEY` for testing)
+- **Google AI Studio API key** - [Get free key](https://aistudio.google.com/)
+
+### **Installation Steps**
 
 1. **Clone the repository**
 
@@ -111,7 +60,8 @@ A modern, intelligent nutrition tracking and meal planning application built wit
    yarn install
    ```
 
-3. **Environment Setup**
+3. **Environment Configuration**
+
    Create a `.env.local` file in the root directory:
 
    ```env
@@ -119,22 +69,16 @@ A modern, intelligent nutrition tracking and meal planning application built wit
    VITE_SUPABASE_URL=your_supabase_project_url
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
-   # USDA FoodData Central API Configuration
-   # Get your API key from: https://api.data.gov/signup/
+   # USDA FoodData Central API
    VITE_USDA_API_KEY=your_usda_api_key
-   ```
 
-   **Note:** You can use `DEMO_KEY` for initial testing, but it has very limited rate limits.
+   # Google AI Studio API
+   VITE_GOOGLE_AI_API_KEY=your_google_ai_api_key
+   ```
 
 4. **Database Setup**
-   The application uses the following database schema with RLS enabled:
 
-   **Note:** If you're upgrading from a previous version that had timeline fields, run this migration first:
-
-   ```sql
-   -- Remove timeline column from users table if it exists
-   ALTER TABLE public.users DROP COLUMN IF EXISTS timeline;
-   ```
+   Run these SQL commands in your Supabase dashboard to create the required tables:
 
    ```sql
    -- Users table for app-specific data
@@ -153,16 +97,6 @@ A modern, intelligent nutrition tracking and meal planning application built wit
      target_weight TEXT,
      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-   );
-
-   -- Profiles table for Supabase Auth integration
-   CREATE TABLE public.profiles (
-     id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-     username TEXT UNIQUE,
-     full_name TEXT,
-     avatar_url TEXT,
-     email TEXT UNIQUE
    );
 
    -- Nutrition Plans table
@@ -222,129 +156,89 @@ A modern, intelligent nutrition tracking and meal planning application built wit
      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    );
 
-   -- Enable RLS on all tables
+   -- Enable Row Level Security
    ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-   ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
    ALTER TABLE nutrition_plans ENABLE ROW LEVEL SECURITY;
    ALTER TABLE food_logs ENABLE ROW LEVEL SECURITY;
    ALTER TABLE water_logs ENABLE ROW LEVEL SECURITY;
    ALTER TABLE weight_logs ENABLE ROW LEVEL SECURITY;
-
-   -- Create RLS policies (examples - adjust based on your needs)
-   CREATE POLICY "Users can view own data" ON users
-     FOR SELECT USING ((SELECT auth.jwt()->>'email') = email);
-
-   CREATE POLICY "Users can insert own data" ON users
-     FOR INSERT WITH CHECK ((SELECT auth.jwt()->>'email') = email);
-
-   CREATE POLICY "Users can update own data" ON users
-     FOR UPDATE USING ((SELECT auth.jwt()->>'email') = email);
    ```
 
 5. **Start the development server**
 
    ```bash
    npm run dev
-   # or
-   yarn dev
    ```
 
-6. **Open your browser**
-   Navigate to `http://localhost:8080`
+6. **Open the application**
+
+   Navigate to `http://localhost:5173` in your browser
+
+## 🤖 Using AI Weight Predictions
+
+The AI weight prediction feature is one of NutriCoach AI's standout capabilities:
+
+### **How It Works**
+
+1. **Data Collection**: The AI analyzes your eating patterns, nutrition adherence, weight history, and goal progress
+2. **Intelligent Analysis**: Uses your BMR, TDEE, activity level, and actual calorie intake vs targets
+3. **Prediction Generation**: Creates realistic weight projections based on evidence-based calculations
+4. **Visual Display**: Shows predictions as an orange dotted line on your weight chart
+
+### **Getting Started**
+
+1. Complete the onboarding process and set your nutrition goals
+2. Log at least one weight entry in the Progress section
+3. Track your daily food and water intake for better accuracy
+4. Click "🤖 Predict Weight Progress" on the Progress page
+5. View your predictions and update them as you log more data
+
+### **What Makes It Accurate**
+
+- Considers your actual eating patterns, not just theoretical targets
+- Analyzes day-to-day consistency and adherence to nutrition goals
+- Factors in realistic weight change rates based on calorie deficits/surpluses
+- Starts predictions from your most recent logged weight
 
 ## 📁 Project Structure
 
 ```
 src/
 ├── components/          # Reusable UI components
-│   ├── ui/             # shadcn/ui components (buttons, forms, etc.)
+│   ├── ui/             # shadcn/ui base components
 │   ├── Navigation.tsx  # Bottom navigation component
-│   ├── theme-provider.tsx # Theme context provider
-│   └── theme-toggle.tsx   # Dark/light mode toggle
+│   └── theme-*.tsx     # Theme management components
 ├── hooks/              # Custom React hooks
-│   ├── use-mobile.tsx  # Mobile detection hook
-│   └── use-toast.ts    # Toast notification hook
+│   ├── use-mobile.tsx  # Mobile device detection
+│   └── use-toast.ts    # Toast notifications
 ├── lib/                # Core utilities and services
-│   ├── auth.ts         # Authentication service wrapper
-│   ├── supabase.ts     # Supabase client and TypeScript types
-│   ├── nutritionCalculator.ts # BMR/TDEE calculation logic
+│   ├── supabase.ts     # Database client and types
+│   ├── nutritionCalculator.ts # BMR/TDEE calculations
 │   ├── usdaFoodService.ts     # USDA API integration
-│   └── utils.ts        # General utility functions
+│   ├── weightPredictionService.ts # AI predictions
+│   └── utils.ts        # General utilities
 ├── pages/              # Route components
-│   ├── Login.tsx       # User authentication
-│   ├── SignUp.tsx      # User registration
-│   ├── Onboarding.tsx  # Progressive user setup
-│   ├── Dashboard.tsx   # Main application overview
+│   ├── Login.tsx       # Authentication
+│   ├── Onboarding.tsx  # User setup flow
+│   ├── Dashboard.tsx   # Main overview
 │   ├── FoodLogging.tsx # Food search and logging
-│   ├── Progress.tsx    # Analytics and progress charts
-│   ├── Profile.tsx     # User profile management
-│   └── NotFound.tsx    # 404 error page
+│   ├── Progress.tsx    # Charts and analytics
+│   └── Profile.tsx     # User profile management
 └── main.tsx           # Application entry point
 ```
 
 ## 🔧 Available Scripts
 
 ```bash
-# Development
 npm run dev          # Start development server with HMR
-npm run build        # Build for production
-npm run build:dev    # Build for development environment
+npm run build        # Create production build
 npm run preview      # Preview production build locally
-npm run lint         # Run ESLint for code quality
+npm run lint         # Run ESLint for code quality checks
 ```
-
-## 🌟 Key Features in Detail
-
-### **Nutrition Calculator**
-
-- Uses scientifically-proven Mifflin-St Jeor Formula for BMR calculation
-- Accounts for activity level, age, gender, and goals
-- Provides personalized macro distribution (protein, carbs, fats)
-- Calculates optimal water intake based on multiple factors
-
-### **Food Database Integration**
-
-- Direct integration with USDA FoodData Central
-- Over 1 million verified food entries
-- Comprehensive nutrition data including micronutrients
-- Smart portion size calculations and conversions
-
-### **Progress Analytics**
-
-- Visual charts showing weight trends over time
-- Daily nutrition goal completion tracking
-- Weekly progress summaries
-- Streak tracking for motivation
-
-### **Security & Privacy**
-
-- Row Level Security (RLS) ensures data isolation
-- Secure password handling with Supabase Auth
-- JWT-based session management
-- Complete data deletion capabilities
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [USDA FoodData Central](https://fdc.nal.usda.gov/) for comprehensive nutrition data
-- [Supabase](https://supabase.com/) for backend infrastructure
-- [shadcn/ui](https://ui.shadcn.com/) for beautiful UI components
-- [Tailwind CSS](https://tailwindcss.com/) for styling framework
-
-## 📞 Support
-
-If you encounter any issues or have questions, please [open an issue](https://github.com/your-username/nutricoach-ai/issues) on GitHub.
 
 ---
 
