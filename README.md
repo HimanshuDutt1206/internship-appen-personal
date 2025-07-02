@@ -236,10 +236,4 @@ npm run preview      # Preview production build locally
 npm run lint         # Run ESLint for code quality checks
 ```
 
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
 **Built with ❤️ for healthier lifestyles**
