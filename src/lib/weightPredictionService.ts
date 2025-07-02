@@ -261,7 +261,7 @@ class WeightPredictionService {
       : 'No nutrition data logged yet'
 
     const prompt = `
-You are a nutrition and weight loss expert AI. I need you to predict daily weight progression for a user based on their comprehensive data.
+You are a nutrition and weight tracking expert AI. I need you to predict daily weight progression for a user based on their comprehensive data.
 
 USER PROFILE:
 - Age: ${data.user.age}, Gender: ${data.user.gender}
