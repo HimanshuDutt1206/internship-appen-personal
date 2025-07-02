@@ -15,7 +15,8 @@ import {
   Zap,
   Beef,
   Wheat,
-  Scale
+  Scale,
+  Loader2
 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import Navigation from "@/components/Navigation"
@@ -23,12 +24,14 @@ import { supabase, type WeightLog, type FoodLog, type WaterLog, type NutritionPl
 import { useToast } from "@/hooks/use-toast"
 import { useNavigate } from "react-router-dom"
 import { format, subDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from "date-fns"
+import { weightPredictionService, type WeightPrediction } from "@/lib/weightPredictionService"
 
 interface WeightChartData {
   date: string
   weight: number
   formattedDate: string
   actualWeight?: number
+  predictedWeight?: number
 }
 
 interface DailyNutritionData {
@@ -76,6 +79,9 @@ export default function Progress() {
   })
   const [nutritionPlan, setNutritionPlan] = useState<any>(null)
   const [userProfile, setUserProfile] = useState<any>(null)
+  const [isPredicting, setIsPredicting] = useState(false)
+  const [predictionError, setPredictionError] = useState<string | null>(null)
+  const [predictions, setPredictions] = useState<WeightPrediction[]>([])
 
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -143,7 +149,7 @@ export default function Progress() {
     }
   }
 
-  const loadWeightProgress = async (userId: number, userProfileData: any, nutritionPlanData: any) => {
+  const loadWeightProgress = async (userId: number, userProfileData: any, nutritionPlanData: any, predictionData: WeightPrediction[] = []) => {
     try {
       const { data: weightLogs, error } = await supabase
         .from('weight_logs')
@@ -156,8 +162,8 @@ export default function Progress() {
       // Generate 31-day timeline
       const timelineData = generate31DayTimeline(userProfileData, nutritionPlanData)
       
-      // Add actual weight logs to timeline
-      const combinedData = mergeActualAndEstimatedData(weightLogs || [], timelineData)
+      // Add actual weight logs and predictions to timeline
+      const combinedData = mergeActualAndEstimatedData(weightLogs || [], timelineData, predictionData.length > 0 ? predictionData : predictions)
       
       setWeightData(combinedData)
     } catch (error) {
@@ -188,7 +194,7 @@ export default function Progress() {
     return timelineData
   }
 
-  const mergeActualAndEstimatedData = (actualLogs: WeightLog[], timelineData: WeightChartData[]) => {
+  const mergeActualAndEstimatedData = (actualLogs: WeightLog[], timelineData: WeightChartData[], predictionData: WeightPrediction[] = []) => {
     // Create a map of dates for efficient lookup
     const dateMap = new Map<string, WeightChartData>()
     
@@ -213,12 +219,56 @@ export default function Progress() {
       // Note: We don't add logs outside the 31-day timeline
     })
     
+    // Add predicted weights to the timeline
+    predictionData.forEach(prediction => {
+      const existing = dateMap.get(prediction.date)
+      if (existing) {
+        // Update existing timeline entry with predicted weight
+        dateMap.set(prediction.date, {
+          ...existing,
+          predictedWeight: prediction.weight
+        })
+      }
+    })
+    
     // Convert back to array and sort by date
     const sortedData = Array.from(dateMap.values()).sort((a, b) => 
       new Date(a.date).getTime() - new Date(b.date).getTime()
     )
     
     return sortedData
+  }
+
+  const handlePredictWeight = async () => {
+    if (!currentUserId) return
+
+    try {
+      setIsPredicting(true)
+      setPredictionError(null)
+      
+      const weightPredictions = await weightPredictionService.generateWeightPredictions(currentUserId)
+      setPredictions(weightPredictions)
+      
+      // Reload weight data with the new predictions
+      const userProfileData = await loadUserProfile(currentUserId)
+      const nutritionPlanData = await loadNutritionPlan(currentUserId)
+      await loadWeightProgress(currentUserId, userProfileData, nutritionPlanData, weightPredictions)
+      
+      toast({
+        title: "Predictions Generated!",
+        description: "AI has predicted your weight progress based on your data.",
+      })
+    } catch (error: any) {
+      console.error('Error generating predictions:', error)
+      setPredictionError(error.message || 'Failed to generate predictions')
+      toast({
+        title: "Prediction Failed",
+        description: error.message || "Failed to generate weight predictions. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsPredicting(false)
+    }
   }
 
   const loadNutritionPlan = async (userId: number) => {
@@ -527,6 +577,12 @@ export default function Progress() {
                     <div className="w-3 h-3 bg-primary rounded-full"></div>
                     <span className="text-muted-foreground">Logged Weight</span>
                   </div>
+                  {predictions.length > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-0.5 bg-orange-500 rounded" style={{ borderStyle: 'dashed', borderWidth: '1px', borderColor: 'rgb(249 115 22)' }}></div>
+                      <span className="text-muted-foreground">AI Predicted Weight</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="h-80">
@@ -564,6 +620,8 @@ export default function Progress() {
                         formatter={(value: any, name: any) => {
                           if (name === 'actualWeight') {
                             return [`${value?.toFixed(1)} ${userProfile?.weight_unit || 'kg'}`, 'Logged Weight']
+                          } else if (name === 'predictedWeight') {
+                            return [`${value?.toFixed(1)} ${userProfile?.weight_unit || 'kg'}`, 'AI Predicted Weight']
                           }
                           return [`${value?.toFixed(1)} ${userProfile?.weight_unit || 'kg'}`, 'Weight']
                         }}
@@ -578,7 +636,25 @@ export default function Progress() {
                         }}
                       />
                       
-                      {/* Actual Weight Line - only line shown */}
+                      {/* Predicted Weight Line */}
+                      {predictions.length > 0 && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="predictedWeight" 
+                          stroke="#f97316"
+                          strokeWidth={2}
+                          strokeDasharray="8 4"
+                          dot={{ 
+                            fill: "#f97316", 
+                            strokeWidth: 1, 
+                            r: 4
+                          }}
+                          connectNulls={true}
+                          name="predictedWeight"
+                        />
+                      )}
+                      
+                      {/* Actual Weight Line - render last to appear on top */}
                       <Line 
                         type="monotone" 
                         dataKey="actualWeight" 
@@ -595,6 +671,47 @@ export default function Progress() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
+                </div>
+                
+                {/* Weight Prediction Button */}
+                <div className="pt-4 border-t">
+                  <div className="flex flex-col items-center space-y-2">
+                    {weightData.find(d => d.actualWeight) ? (
+                      <Button
+                        onClick={handlePredictWeight}
+                        disabled={isPredicting}
+                        className="w-full max-w-sm transition-all duration-200 hover:scale-105"
+                        variant={predictions.length > 0 ? "outline" : "default"}
+                      >
+                        {isPredicting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Generating Predictions...
+                          </>
+                        ) : predictions.length > 0 ? (
+                          "Update Predictions"
+                        ) : (
+                          "🤖 Predict Weight Progress"
+                        )}
+                      </Button>
+                    ) : (
+                      <div className="text-center text-sm text-muted-foreground">
+                        Log at least one weight to generate AI predictions
+                      </div>
+                    )}
+                    
+                    {predictionError && (
+                      <div className="text-center text-sm text-destructive">
+                        {predictionError}
+                      </div>
+                    )}
+                    
+                    {predictions.length > 0 && (
+                      <div className="text-center text-xs text-muted-foreground">
+                        Showing {predictions.length} AI-predicted days
+                      </div>
+                    )}
+                  </div>
                 </div>
                 
                 {/* Progress Summary */}
