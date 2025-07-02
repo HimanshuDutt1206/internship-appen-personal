@@ -25,7 +25,6 @@ interface OnboardingData {
   activityLevel: string
   primaryGoal: string
   targetWeight: string
-  timeline: string
 }
 
 const steps = [
@@ -48,7 +47,6 @@ export default function Onboarding() {
     activityLevel: "",
     primaryGoal: "",
     targetWeight: "",
-    timeline: "",
   })
   const navigate = useNavigate()
   const location = useLocation()
@@ -84,7 +82,6 @@ export default function Onboarding() {
         activityLevel: existingProfileData.activityLevel,
         primaryGoal: existingProfileData.primaryGoal,
         targetWeight: existingProfileData.targetWeight,
-        timeline: existingProfileData.timeline,
       })
     }
   }, [navigate, isProfileEdit, existingProfileData])
@@ -120,7 +117,6 @@ export default function Onboarding() {
         activity_level: data.activityLevel,
         primary_goal: data.primaryGoal,
         target_weight: data.targetWeight || '',
-        timeline: data.timeline
       }
 
       // Check if user already exists in our users table
@@ -165,8 +161,7 @@ export default function Onboarding() {
         weight_unit: data.weightUnit,
         activity_level: data.activityLevel,
         primary_goal: data.primaryGoal,
-        target_weight: data.targetWeight,
-        timeline: data.timeline
+        target_weight: data.targetWeight
       }
 
       const nutritionPlan = generateNutritionPlan(calculationData)
@@ -244,7 +239,7 @@ export default function Onboarding() {
       case 1:
         return data.activityLevel
       case 2:
-        return data.primaryGoal && (data.primaryGoal === "maintenance" || data.targetWeight) && data.timeline
+        return data.primaryGoal && (data.primaryGoal === "maintenance" || data.targetWeight)
       default:
         return false
     }
@@ -358,6 +353,14 @@ export default function Onboarding() {
           <div className="space-y-8">
             <div className="space-y-4">
               <Label className="text-base font-medium">What's your primary goal?</Label>
+              <div className="bg-blue-50/50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
+                <p className="text-sm text-blue-700 dark:text-blue-300 font-medium mb-1">
+                  📅 One-Month Timeline
+                </p>
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  All nutrition plans are designed for sustainable progress over one month with healthy, realistic targets.
+                </p>
+              </div>
               <RadioGroup 
                 value={data.primaryGoal} 
                 onValueChange={(value) => updateData("primaryGoal", value)}
@@ -405,60 +408,6 @@ export default function Onboarding() {
                       {data.weightUnit}
                     </Badge>
                   </div>
-                </div>
-
-                <div className="space-y-4">
-                  <Label className="text-base font-medium">Timeline & Approach</Label>
-                  <Select value={data.timeline} onValueChange={(value) => updateData("timeline", value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select your preferred timeline" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {data.primaryGoal === "weight-loss" ? (
-                        <>
-                          <SelectItem value="aggressive">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Aggressive (2-4 months)</span>
-                              <span className="text-xs text-muted-foreground">Faster results, requires more discipline</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="moderate">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Moderate (4-8 months)</span>
-                              <span className="text-xs text-muted-foreground">Balanced and sustainable approach</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="gradual">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Gradual (8-12 months)</span>
-                              <span className="text-xs text-muted-foreground">Slow and steady, easiest to maintain</span>
-                            </div>
-                          </SelectItem>
-                        </>
-                      ) : (
-                        <>
-                          <SelectItem value="aggressive">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Aggressive (3-6 months)</span>
-                              <span className="text-xs text-muted-foreground">Faster gains, higher calorie surplus</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="moderate">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Moderate (6-12 months)</span>
-                              <span className="text-xs text-muted-foreground">Balanced approach with quality gains</span>
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="gradual">
-                            <div className="flex flex-col items-start">
-                              <span className="font-medium">Gradual (12-18 months)</span>
-                              <span className="text-xs text-muted-foreground">Highest quality gains, minimal fat gain</span>
-                            </div>
-                          </SelectItem>
-                        </>
-                      )}
-                    </SelectContent>
-                  </Select>
                 </div>
               </>
             )}

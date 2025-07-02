@@ -8,7 +8,6 @@ interface UserData {
   activity_level: string
   primary_goal: string
   target_weight: string
-  timeline: string
 }
 
 interface NutritionPlan {
@@ -63,10 +62,7 @@ function calculateBMR(weightKg: number, heightCm: number, age: number, gender: s
       return baseCalc - 161
     case 'other':
     case 'prefer-not-to-say':
-      // Use average of male and female formulas
-      const maleCalc = baseCalc + 5
-      const femaleCalc = baseCalc - 161
-      return (maleCalc + femaleCalc) / 2
+      return baseCalc - 78 // Fixed value as specified
     default:
       return baseCalc - 161 // Default to female formula
   }
@@ -86,33 +82,24 @@ function calculateTDEE(bmr: number, activityLevel: string): number {
   return bmr * multiplier
 }
 
-// Calculate target calories based on goals
-function calculateTargetCalories(tdee: number, goal: string, timeline: string, gender: string): number {
-  let targetCalories = tdee
-  
-  if (goal === 'weight-loss') {
-    const deficits = {
-      'aggressive': 750,
-      'moderate': 500,
-      'gradual': 250
-    }
-    targetCalories = tdee - (deficits[timeline as keyof typeof deficits] || 500)
-  } else if (goal === 'muscle-gain') {
-    const surpluses = {
-      'aggressive': 500,
-      'moderate': 300,
-      'gradual': 200
-    }
-    targetCalories = tdee + (surpluses[timeline as keyof typeof surpluses] || 300)
+// Calculate target calories based on weight difference for ONE MONTH timeline
+function calculateTargetCalories(tdee: number, currentWeightKg: number, targetWeightKg: number, goal: string): number {
+  // For maintenance, ignore target weight and return TDEE
+  if (goal === 'maintenance') {
+    return Math.round(tdee)
   }
-  // maintenance stays at TDEE
   
-  // Apply safety limits
-  const minCalories = gender.toLowerCase() === 'male' ? 1500 : 1200
-  const maxDeficit = Math.min(tdee - 1000, tdee * 0.25) // Cap at 25% of TDEE or 1000 cal deficit
+  // Calculate weight difference (positive = gain, negative = loss)
+  const weightDelta = targetWeightKg - currentWeightKg
   
-  targetCalories = Math.max(targetCalories, minCalories)
-  targetCalories = Math.max(targetCalories, maxDeficit)
+  // Convert weight change to total calorie change (1 kg = 7700 kcal)
+  const totalCalorieChange = weightDelta * 7700
+  
+  // Calculate daily calorie adjustment over 30 days
+  const dailyCalorieDelta = totalCalorieChange / 30
+  
+  // Apply adjustment to TDEE (no safety limits)
+  const targetCalories = tdee + dailyCalorieDelta
   
   return Math.round(targetCalories)
 }
@@ -145,21 +132,20 @@ function calculateMacros(targetCalories: number, weightKg: number, goal: string)
   const proteinGrams = Math.round(weightKg * proteinPerKg)
   const proteinCalories = proteinGrams * 4
   
-  // Calculate fat requirements (25-30% of calories, minimum 20%)
-  const fatPercentage = 0.25 // 25% of calories
-  const fatCalories = Math.round(targetCalories * fatPercentage)
+  // Calculate fat requirements (25% of calories)
+  const fatCalories = Math.round(targetCalories * 0.25)
   const fatGrams = Math.round(fatCalories / 9)
   
-  // Calculate carbs (remaining calories)
+  // Calculate carbs (remaining calories, no minimum floor)
   const remainingCalories = targetCalories - proteinCalories - fatCalories
-  const carbsCalories = Math.max(remainingCalories, 400) // Minimum 100g carbs
-  const carbsGrams = Math.round(carbsCalories / 4)
+  const carbsCalories = remainingCalories
+  const carbsGrams = Math.max(0, Math.round(carbsCalories / 4)) // Clamp to 0 minimum
   
   // Calculate percentages
   const totalCalories = proteinCalories + carbsCalories + fatCalories
-  const proteinPercentage = Math.round((proteinCalories / totalCalories) * 100)
-  const carbsPercentage = Math.round((carbsCalories / totalCalories) * 100)
-  const fatsPercentage = Math.round((fatCalories / totalCalories) * 100)
+  const proteinPercentage = totalCalories > 0 ? Math.round((proteinCalories / totalCalories) * 100) : 0
+  const carbsPercentage = totalCalories > 0 ? Math.round((carbsCalories / totalCalories) * 100) : 0
+  const fatsPercentage = totalCalories > 0 ? Math.round((fatCalories / totalCalories) * 100) : 0
   
   return {
     protein_grams: proteinGrams,
@@ -175,7 +161,7 @@ function calculateMacros(targetCalories: number, weightKg: number, goal: string)
 }
 
 // Calculate comprehensive water intake target
-function calculateWaterTarget(weightKg: number, activityLevel: string, age: number, gender: string, primaryGoal: string): number {
+function calculateWaterTarget(weightKg: number, activityLevel: string, primaryGoal: string): number {
   // Base water calculation using weight-based formula
   // Daily Water (liters) = Weight (kg) / 30
   const baseWaterLiters = weightKg / 30
@@ -198,55 +184,31 @@ function calculateWaterTarget(weightKg: number, activityLevel: string, age: numb
   } else if (primaryGoal === 'muscle-gain') {
     adjustedWater += 0.75 // Additional 750ml for protein synthesis and recovery
   }
-  // maintenance and general health: no additional adjustment
-  
-  // Age Considerations
-  if (age >= 31 && age <= 50) {
-    adjustedWater += 0.25 // Add 250ml
-  } else if (age >= 51) {
-    adjustedWater += 0.5 // Add 500ml due to decreased thirst sensation
-  }
-  // 18-30 years: no adjustment
-  
-  // Gender Considerations
-  let genderFactor = 1.0
-  if (gender.toLowerCase() === 'female') {
-    genderFactor = 0.9 // Reduce by 10% due to generally lower muscle mass
-  } else if (gender.toLowerCase() === 'other' || gender.toLowerCase() === 'prefer-not-to-say') {
-    genderFactor = 0.95 // Use average (reduce by 5%)
-  }
-  // male: use full calculated amount (1.0)
-  
-  const finalWaterLiters = adjustedWater * genderFactor
-  
-  // Safety Limits
-  const minWaterLiters = 2.0 // Minimum 2.0 liters
-  const maxWaterLiters = 4.5 // Maximum 4.5 liters to prevent water intoxication
-  
-  const safeWaterLiters = Math.max(minWaterLiters, Math.min(maxWaterLiters, finalWaterLiters))
+  // maintenance: no additional adjustment
   
   // Convert to milliliters and round
-  return Math.round(safeWaterLiters * 1000)
+  return Math.round(adjustedWater * 1000)
 }
 
 // Main function to generate complete nutrition plan
 export function generateNutritionPlan(userData: UserData): NutritionPlan {
   // Convert units
-  const weightKg = convertWeightToKg(userData.weight, userData.weight_unit)
+  const currentWeightKg = convertWeightToKg(userData.weight, userData.weight_unit)
+  const targetWeightKg = convertWeightToKg(userData.target_weight || userData.weight, userData.weight_unit)
   const heightCm = convertHeightToCm(userData.height, userData.height_unit)
   
   // Calculate BMR and TDEE
-  const bmr = calculateBMR(weightKg, heightCm, userData.age, userData.gender)
+  const bmr = calculateBMR(currentWeightKg, heightCm, userData.age, userData.gender)
   const tdee = calculateTDEE(bmr, userData.activity_level)
   
-  // Calculate target calories
-  const targetCalories = calculateTargetCalories(tdee, userData.primary_goal, userData.timeline, userData.gender)
+  // Calculate target calories based on weight difference
+  const targetCalories = calculateTargetCalories(tdee, currentWeightKg, targetWeightKg, userData.primary_goal)
   
   // Calculate macros
-  const macros = calculateMacros(targetCalories, weightKg, userData.primary_goal)
+  const macros = calculateMacros(targetCalories, currentWeightKg, userData.primary_goal)
   
-  // Calculate water target
-  const waterTarget = calculateWaterTarget(weightKg, userData.activity_level, userData.age, userData.gender, userData.primary_goal)
+  // Calculate water target (simplified - removed age and gender factors)
+  const waterTarget = calculateWaterTarget(currentWeightKg, userData.activity_level, userData.primary_goal)
   
   return {
     bmr: Math.round(bmr),

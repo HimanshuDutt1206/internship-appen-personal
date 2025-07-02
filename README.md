@@ -18,7 +18,7 @@ A modern, intelligent nutrition tracking and meal planning application built wit
 - **Goal-Based Macro Distribution** (weight loss, muscle gain, maintenance)
 - **Intelligent Water Intake Targets** based on activity level and goals
 - **Multi-Unit Support** (metric/imperial measurements)
-- **Timeline-Based Adjustments** (aggressive, moderate, gradual)
+- **One-Month Timeline** with sustainable, realistic targets
 
 ### 📱 **Comprehensive Food Logging**
 
@@ -129,6 +129,13 @@ A modern, intelligent nutrition tracking and meal planning application built wit
 4. **Database Setup**
    The application uses the following database schema with RLS enabled:
 
+   **Note:** If you're upgrading from a previous version that had timeline fields, run this migration first:
+
+   ```sql
+   -- Remove timeline column from users table if it exists
+   ALTER TABLE public.users DROP COLUMN IF EXISTS timeline;
+   ```
+
    ```sql
    -- Users table for app-specific data
    CREATE TABLE public.users (
@@ -144,7 +151,6 @@ A modern, intelligent nutrition tracking and meal planning application built wit
      activity_level TEXT,
      primary_goal TEXT,
      target_weight TEXT,
-     timeline TEXT,
      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
    );

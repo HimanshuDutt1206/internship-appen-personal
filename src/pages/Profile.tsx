@@ -52,7 +52,6 @@ interface UserProfile {
   activityLevel: string
   primaryGoal: string
   targetWeight: string
-  timeline: string
 }
 
 export default function Profile() {
@@ -70,8 +69,7 @@ export default function Profile() {
     weightUnit: "lbs",
     activityLevel: "",
     primaryGoal: "",
-    targetWeight: "",
-    timeline: ""
+    targetWeight: ""
   })
 
   const [editedProfile, setEditedProfile] = useState<UserProfile>(profile)
@@ -130,8 +128,7 @@ export default function Profile() {
         weightUnit: data.weight_unit,
         activityLevel: data.activity_level,
         primaryGoal: data.primary_goal,
-        targetWeight: data.target_weight,
-        timeline: data.timeline
+        targetWeight: data.target_weight
       }
 
       setProfile(userProfile)
@@ -544,31 +541,7 @@ export default function Profile() {
     return labels[goal as keyof typeof labels] || goal
   }
 
-  const getTimelineLabel = (timeline: string, primaryGoal?: string) => {
-    const timelineMap: Record<string, { weightLoss: string; muscleGain: string; maintenance: string }> = {
-      aggressive: {
-        weightLoss: "Aggressive (2-4 months)",
-        muscleGain: "Aggressive (3-6 months)", 
-        maintenance: "Aggressive"
-      },
-      moderate: {
-        weightLoss: "Moderate (4-8 months)",
-        muscleGain: "Moderate (6-12 months)",
-        maintenance: "Moderate"
-      },
-      gradual: {
-        weightLoss: "Gradual (8-12 months)", 
-        muscleGain: "Gradual (12-18 months)",
-        maintenance: "Gradual"
-      }
-    }
 
-    const goalKey = primaryGoal === "weight-loss" ? "weightLoss" 
-                    : primaryGoal === "muscle-gain" ? "muscleGain" 
-                    : "maintenance"
-
-    return timelineMap[timeline]?.[goalKey] || timeline.charAt(0).toUpperCase() + timeline.slice(1)
-  }
 
   if (isLoading) {
     return (
@@ -793,7 +766,7 @@ export default function Profile() {
                 </div>
               )}
               <div className="text-center">
-                <Badge variant="secondary" className="mb-2">{getTimelineLabel(profile.timeline, profile.primaryGoal)}</Badge>
+                <Badge variant="secondary" className="mb-2">One Month</Badge>
                 <p className="text-sm text-muted-foreground">Timeline</p>
               </div>
             </div>

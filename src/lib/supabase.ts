@@ -23,7 +23,6 @@ export interface User {
   activity_level: string
   primary_goal: string
   target_weight: string
-  timeline: string
   created_at?: string
   updated_at?: string
 }

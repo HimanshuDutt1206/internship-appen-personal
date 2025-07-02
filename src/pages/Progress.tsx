@@ -2,8 +2,9 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress as ProgressBar } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts"
 import { 
   TrendingUp, 
   TrendingDown,
@@ -27,6 +28,9 @@ interface WeightChartData {
   date: string
   weight: number
   formattedDate: string
+  estimatedWeight?: number
+  actualWeight?: number
+  targetWeight?: number
 }
 
 interface DailyNutritionData {
@@ -73,6 +77,7 @@ export default function Progress() {
     avgGoalCompletion: 0
   })
   const [nutritionPlan, setNutritionPlan] = useState<any>(null)
+  const [userProfile, setUserProfile] = useState<any>(null)
 
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -104,8 +109,9 @@ export default function Progress() {
       setCurrentUserId(userData.id)
 
       // Load data in sequence to ensure dependencies are met
-      await loadWeightProgress(userData.id)
+      const userProfileData = await loadUserProfile(userData.id)
       const nutritionPlanData = await loadNutritionPlan(userData.id)
+      await loadWeightProgressWithEstimates(userData.id, userProfileData, nutritionPlanData)
       const weeklyCompletion = await loadWeeklyNutritionData(userData.id, nutritionPlanData)
       await calculateProgressMetrics(userData.id, weeklyCompletion)
 
@@ -121,7 +127,25 @@ export default function Progress() {
     }
   }
 
-  const loadWeightProgress = async (userId: number) => {
+  const loadUserProfile = async (userId: number) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (error) throw error
+
+      setUserProfile(data)
+      return data
+    } catch (error) {
+      console.error('Error loading user profile:', error)
+      return null
+    }
+  }
+
+  const loadWeightProgressWithEstimates = async (userId: number, userProfileData: any, nutritionPlanData: any) => {
     try {
       const { data: weightLogs, error } = await supabase
         .from('weight_logs')
@@ -131,18 +155,183 @@ export default function Progress() {
 
       if (error) throw error
 
-      if (weightLogs && weightLogs.length > 0) {
-        const chartData: WeightChartData[] = weightLogs.map((log: WeightLog) => ({
-          date: log.logged_date,
-          weight: log.weight,
-          formattedDate: format(new Date(log.logged_date), 'MMM d')
-        }))
-        
-        setWeightData(chartData)
-      }
+      // Generate estimated weight progression
+      const estimatedData = generateEstimatedWeightProgression(userProfileData, nutritionPlanData)
+      
+      // Combine actual weight logs with estimated progression
+      const combinedData = mergeActualAndEstimatedData(weightLogs || [], estimatedData)
+      
+      setWeightData(combinedData)
     } catch (error) {
       console.error('Error loading weight progress:', error)
     }
+  }
+
+  const generateEstimatedWeightProgression = (userProfile: any, nutritionPlan: any) => {
+    if (!userProfile || !nutritionPlan || !userProfile.target_weight) return []
+
+    const startWeight = parseFloat(userProfile.weight)
+    const targetWeight = parseFloat(userProfile.target_weight)
+    const planCreatedDate = new Date(nutritionPlan.created_at)
+    const currentDate = new Date()
+    
+    // Calculate weekly weight change based on caloric deficit/surplus
+    // For weight loss: deficit = TDEE - target_calories (positive = deficit)
+    // For muscle gain: surplus = target_calories - TDEE (positive = surplus)
+    let dailyCalorieChange
+    if (userProfile.primary_goal === 'weight-loss') {
+      dailyCalorieChange = nutritionPlan.tdee - nutritionPlan.target_calories // deficit (positive)
+      dailyCalorieChange = -dailyCalorieChange // negative for weight loss
+    } else if (userProfile.primary_goal === 'muscle-gain') {
+      dailyCalorieChange = nutritionPlan.target_calories - nutritionPlan.tdee // surplus (positive)
+      // positive for weight gain
+    } else {
+      dailyCalorieChange = 0 // maintenance
+    }
+    
+    // 1 pound ≈ 3500 calories, so weekly change = (daily change * 7) / 3500
+    const weeklyWeightChange = (dailyCalorieChange * 7) / 3500 // in pounds
+    
+    // Convert to user's weight unit if needed
+    const isKg = userProfile.weight_unit === 'kg'
+    let weeklyChangeInUserUnit = isKg ? weeklyWeightChange * 0.453592 : weeklyWeightChange
+    
+    // Ensure we have a meaningful weight change rate
+    if (Math.abs(weeklyChangeInUserUnit) < 0.01) {
+      // If virtually no change expected, set a minimal rate based on goal
+      if (userProfile.primary_goal === 'weight-loss') {
+        weeklyChangeInUserUnit = isKg ? -0.1 : -0.2 // 0.1kg or 0.2lbs loss per week
+      } else if (userProfile.primary_goal === 'muscle-gain') {
+        weeklyChangeInUserUnit = isKg ? 0.1 : 0.2 // 0.1kg or 0.2lbs gain per week
+      } else {
+        weeklyChangeInUserUnit = 0 // maintenance
+      }
+    }
+    
+
+    
+    // Calculate estimated timeline based on goal
+    const totalWeightChange = Math.abs(targetWeight - startWeight)
+    const estimatedWeeksToGoal = Math.max(1, Math.ceil(totalWeightChange / Math.abs(weeklyChangeInUserUnit)))
+    
+    // Generate data points from plan creation to estimated completion + buffer
+    const estimatedData: WeightChartData[] = []
+    const bufferWeeks = 4 // Add 4 weeks buffer after estimated completion
+    const totalWeeks = estimatedWeeksToGoal + bufferWeeks
+    
+    // Always start with the starting weight at plan creation date
+    estimatedData.push({
+      date: planCreatedDate.toISOString().split('T')[0],
+      weight: startWeight,
+      estimatedWeight: startWeight,
+      targetWeight: targetWeight,
+      formattedDate: format(planCreatedDate, 'MMM d')
+    })
+    
+    // Generate weekly data points
+    for (let week = 1; week <= totalWeeks; week++) {
+      const currentWeekDate = new Date(planCreatedDate)
+      currentWeekDate.setDate(currentWeekDate.getDate() + (week * 7))
+      
+      // Calculate estimated weight for this week
+      // weeklyChangeInUserUnit already has the correct direction (negative for loss, positive for gain)
+      let estimatedWeight = startWeight + (weeklyChangeInUserUnit * week)
+      
+      // Clamp to target weight once reached
+      if (userProfile.primary_goal === 'weight-loss') {
+        estimatedWeight = Math.max(estimatedWeight, targetWeight) // Don't go below target
+      } else if (userProfile.primary_goal === 'muscle-gain') {
+        estimatedWeight = Math.min(estimatedWeight, targetWeight) // Don't go above target
+      }
+      
+      // Continue showing data points (extend chart timeline as needed)
+      estimatedData.push({
+        date: currentWeekDate.toISOString().split('T')[0],
+        weight: estimatedWeight,
+        estimatedWeight: estimatedWeight,
+        targetWeight: targetWeight,
+        formattedDate: format(currentWeekDate, 'MMM d')
+      })
+    }
+    
+    return estimatedData
+  }
+
+  const mergeActualAndEstimatedData = (actualLogs: WeightLog[], estimatedData: WeightChartData[]) => {
+    // Create a map of dates for efficient lookup
+    const dateMap = new Map<string, WeightChartData>()
+    
+    // Add estimated data first
+    estimatedData.forEach(data => {
+      dateMap.set(data.date, data)
+    })
+    
+    // Get target weight for extending data
+    const targetWeight = estimatedData.length > 0 ? estimatedData[0].targetWeight : undefined
+    
+    // Add actual weight logs
+    actualLogs.forEach(log => {
+      const dateKey = log.logged_date
+      const existing = dateMap.get(dateKey)
+      
+      if (existing) {
+        // Update existing entry with actual weight
+        dateMap.set(dateKey, {
+          ...existing,
+          weight: log.weight,
+          actualWeight: log.weight
+        })
+      } else {
+        // Create new entry for actual weight (extend timeline if needed)
+        dateMap.set(dateKey, {
+          date: dateKey,
+          weight: log.weight,
+          actualWeight: log.weight,
+          targetWeight: targetWeight,
+          formattedDate: format(new Date(dateKey), 'MMM d')
+        })
+      }
+    })
+    
+    // If we have actual logs that extend beyond estimated data, extend the estimated line
+    if (actualLogs.length > 0 && estimatedData.length > 0) {
+      const latestActualDate = new Date(Math.max(...actualLogs.map(log => new Date(log.logged_date).getTime())))
+      const latestEstimatedDate = new Date(Math.max(...estimatedData.map(data => new Date(data.date).getTime())))
+      
+      // If actual logs go beyond estimated timeline, extend the estimated line
+      if (latestActualDate > latestEstimatedDate) {
+        const lastEstimatedPoint = estimatedData[estimatedData.length - 1]
+        const daysDiff = Math.ceil((latestActualDate.getTime() - latestEstimatedDate.getTime()) / (1000 * 60 * 60 * 24))
+        
+        // Extend estimated line with flat target weight
+        for (let day = 1; day <= daysDiff; day++) {
+          const extendedDate = new Date(latestEstimatedDate)
+          extendedDate.setDate(extendedDate.getDate() + day)
+          
+          const extendedDateKey = extendedDate.toISOString().split('T')[0]
+          
+          // Only add if we don't already have data for this date
+          if (!dateMap.has(extendedDateKey)) {
+            dateMap.set(extendedDateKey, {
+              date: extendedDateKey,
+              weight: lastEstimatedPoint.estimatedWeight || lastEstimatedPoint.weight,
+              estimatedWeight: lastEstimatedPoint.estimatedWeight || lastEstimatedPoint.weight,
+              targetWeight: targetWeight,
+              formattedDate: format(extendedDate, 'MMM d')
+            })
+          }
+        }
+      }
+    }
+    
+    // Convert back to array and sort by date
+    const sortedData = Array.from(dateMap.values()).sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    )
+    
+
+    
+    return sortedData
   }
 
   const loadNutritionPlan = async (userId: number) => {
@@ -438,42 +627,179 @@ export default function Progress() {
               <Scale className="h-5 w-5" />
               <span>Weight Progress</span>
             </CardTitle>
-            <CardDescription>Your weight change over time</CardDescription>
+            <CardDescription>
+              Your weight journey: estimated progress vs actual results
+              {userProfile?.target_weight && (
+                <span className="block text-sm mt-1">
+                  Target: {userProfile.target_weight} {userProfile.weight_unit}
+                </span>
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {weightData.length > 0 ? (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weightData}>
-                    <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                    <XAxis dataKey="formattedDate" />
-                    <YAxis domain={['dataMin - 1', 'dataMax + 1']} />
-                    <Tooltip 
-                      labelFormatter={(label, payload) => {
-                        if (payload && payload[0]) {
-                          const data = payload[0].payload
-                          return format(new Date(data.date), 'MMMM d, yyyy')
-                        }
-                        return label
-                      }}
-                      formatter={(value: any) => [`${value} ${progressMetrics.weightChangeUnit}`, 'Weight']}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="weight" 
-                      stroke="hsl(var(--primary))" 
-                      strokeWidth={3}
-                      dot={{ fill: "hsl(var(--primary))", strokeWidth: 2, r: 6 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="space-y-4">
+                {/* Legend */}
+                <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-0.5 bg-blue-500 rounded"></div>
+                    <span className="text-muted-foreground">Estimated Progress</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-primary rounded-full"></div>
+                    <span className="text-muted-foreground">Actual Weight</span>
+                  </div>
+                  {userProfile?.target_weight && (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-0.5 bg-green-500 rounded border-dashed border-2 border-green-500"></div>
+                      <span className="text-muted-foreground">Target Weight</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart 
+                      data={weightData}
+                      margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                      <XAxis 
+                        dataKey="formattedDate" 
+                        tick={{ fontSize: 11 }}
+                        interval={Math.max(1, Math.floor(weightData.length / 8))}
+                        angle={-45}
+                        textAnchor="end"
+                        height={60}
+                      />
+                      <YAxis 
+                        domain={['dataMin - 2', 'dataMax + 2']}
+                        tick={{ fontSize: 11 }}
+                        label={{ 
+                          value: `Weight (${userProfile?.weight_unit || 'kg'})`, 
+                          angle: -90, 
+                          position: 'insideLeft' 
+                        }}
+                      />
+                      <Tooltip 
+                        labelFormatter={(label, payload) => {
+                          if (payload && payload[0]) {
+                            const data = payload[0].payload
+                            return format(new Date(data.date), 'MMMM d, yyyy')
+                          }
+                          return label
+                        }}
+                        formatter={(value: any, name: any) => {
+                          if (name === 'estimatedWeight') {
+                            return [`${value?.toFixed(1)} ${userProfile?.weight_unit || 'kg'}`, 'Estimated Weight']
+                          } else if (name === 'actualWeight') {
+                            return [`${value?.toFixed(1)} ${userProfile?.weight_unit || 'kg'}`, 'Actual Weight']
+                          } else if (name === 'targetWeight') {
+                            return [`${value?.toFixed(1)} ${userProfile?.weight_unit || 'kg'}`, 'Target Weight']
+                          }
+                          return [`${value?.toFixed(1)} ${userProfile?.weight_unit || 'kg'}`, 'Weight']
+                        }}
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px'
+                        }}
+                        filter={(label, payload) => {
+                          // Only show tooltip for data points that have actual values
+                          return payload && payload.some(p => p.value !== null && p.value !== undefined)
+                        }}
+                      />
+                      
+                      {/* Estimated Weight Line */}
+                      <Line 
+                        type="monotone" 
+                        dataKey="estimatedWeight" 
+                        stroke="#3b82f6"
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                        dot={false}
+                        connectNulls={true}
+                        name="estimatedWeight"
+                      />
+                      
+                      {/* Target Weight Reference Line */}
+                      {userProfile?.target_weight && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="targetWeight"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          strokeDasharray="10 5"
+                          dot={false}
+                          connectNulls={true}
+                          name="targetWeight"
+                        />
+                      )}
+                      
+                      {/* Actual Weight Line - render last to appear on top */}
+                      <Line 
+                        type="monotone" 
+                        dataKey="actualWeight" 
+                        stroke="hsl(var(--primary))" 
+                        strokeWidth={3}
+                        dot={{ 
+                          fill: "hsl(var(--primary))", 
+                          strokeWidth: 2, 
+                          r: 6,
+                          stroke: "hsl(var(--background))"
+                        }}
+                        connectNulls={false}
+                        name="actualWeight"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                
+                {/* Progress Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground">Starting Weight</p>
+                    <p className="text-lg font-semibold">
+                      {userProfile?.weight} {userProfile?.weight_unit}
+                    </p>
+                  </div>
+                  {weightData.find(d => d.actualWeight) && (
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground">Current Weight</p>
+                      <p className="text-lg font-semibold">
+                        {weightData.filter(d => d.actualWeight).pop()?.actualWeight?.toFixed(1)} {userProfile?.weight_unit}
+                      </p>
+                    </div>
+                  )}
+                  {userProfile?.target_weight && (
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground">Target Weight</p>
+                      <p className="text-lg font-semibold text-green-600">
+                        {userProfile.target_weight} {userProfile.weight_unit}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="h-64 flex items-center justify-center">
                 <div className="text-center">
                   <Scale className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No weight data available</p>
-                  <p className="text-sm text-muted-foreground">Start logging your weight to see progress</p>
+                  <p className="text-muted-foreground">No weight progress available</p>
+                  <p className="text-sm text-muted-foreground">
+                    {!userProfile?.target_weight 
+                      ? "Set a target weight in your profile to see estimated progress"
+                      : "Start logging your weight to see progress vs estimates"
+                    }
+                  </p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="mt-4"
+                    onClick={() => navigate('/profile')}
+                  >
+                    Go to Profile
+                  </Button>
                 </div>
               </div>
             )}
