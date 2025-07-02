@@ -7,12 +7,13 @@ import { Progress } from "@/components/ui/progress"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Scale, Ruler, Activity, Target, ChevronRight, ChevronLeft } from "lucide-react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useLocation } from "react-router-dom"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { supabase, type User as UserType, type NutritionPlan } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { generateNutritionPlan } from "@/lib/nutritionCalculator"
 import { AuthService, type AuthUser } from "@/lib/auth"
+import { Badge } from "@/components/ui/badge"
 
 interface OnboardingData {
   age: string
@@ -50,7 +51,12 @@ export default function Onboarding() {
     timeline: "",
   })
   const navigate = useNavigate()
+  const location = useLocation()
   const { toast } = useToast()
+
+  // Check if this is a profile edit coming from the profile page
+  const isProfileEdit = location.state?.isProfileEdit || false
+  const existingProfileData = location.state?.existingData || null
 
   useEffect(() => {
     // Check if user is authenticated
@@ -65,7 +71,23 @@ export default function Onboarding() {
     }
     
     checkAuthUser()
-  }, [navigate])
+
+    // Pre-populate data if coming from profile edit
+    if (isProfileEdit && existingProfileData) {
+      setData({
+        age: existingProfileData.age,
+        gender: existingProfileData.gender,
+        height: existingProfileData.height,
+        heightUnit: existingProfileData.heightUnit,
+        weight: existingProfileData.weight,
+        weightUnit: existingProfileData.weightUnit,
+        activityLevel: existingProfileData.activityLevel,
+        primaryGoal: existingProfileData.primaryGoal,
+        targetWeight: existingProfileData.targetWeight,
+        timeline: existingProfileData.timeline,
+      })
+    }
+  }, [navigate, isProfileEdit, existingProfileData])
 
   const updateData = (field: keyof OnboardingData, value: string) => {
     setData(prev => ({ ...prev, [field]: value }))
@@ -149,41 +171,39 @@ export default function Onboarding() {
 
       const nutritionPlan = generateNutritionPlan(calculationData)
 
-      // Check if nutrition plan already exists
-      const { data: existingPlan } = await supabase
-        .from('nutrition_plans')
-        .select('id')
-        .eq('user_id', userId)
-        .single()
+      // If this is a profile edit, delete the existing nutrition plan first
+      if (isProfileEdit) {
+        const { error: deletePlanError } = await supabase
+          .from('nutrition_plans')
+          .delete()
+          .eq('user_id', userId)
 
+        if (deletePlanError) {
+          console.warn('Error deleting existing nutrition plan:', deletePlanError)
+          // Continue with creation even if deletion fails
+        }
+      }
+
+      // Create new nutrition plan
       const planData: Omit<NutritionPlan, 'id' | 'created_at' | 'updated_at'> = {
         user_id: userId,
         ...nutritionPlan
       }
 
-      if (existingPlan) {
-        // Update existing plan
-        const { error: updatePlanError } = await supabase
-          .from('nutrition_plans')
-          .update(planData)
-          .eq('user_id', userId)
+      const { error: insertPlanError } = await supabase
+        .from('nutrition_plans')
+        .insert([planData])
 
-        if (updatePlanError) throw updatePlanError
-      } else {
-        // Create new plan
-        const { error: insertPlanError } = await supabase
-          .from('nutrition_plans')
-          .insert([planData])
-
-        if (insertPlanError) throw insertPlanError
-      }
+      if (insertPlanError) throw insertPlanError
 
       // Clean up temporary data
       localStorage.removeItem('tempUserName')
 
       toast({
-        title: "Welcome to NutriCoach AI!",
-        description: "Your personalized nutrition plan has been created successfully.",
+        title: isProfileEdit ? "Plan Updated Successfully!" : "Welcome to NutriCoach AI!",
+        description: isProfileEdit 
+          ? "Your nutrition plan has been updated with your new information."
+          : "Your personalized nutrition plan has been created successfully.",
       })
 
       // Navigate to dashboard after successful save
@@ -192,7 +212,9 @@ export default function Onboarding() {
       console.error('Error saving user data:', error)
       toast({
         title: "Error",
-        description: "Failed to save your profile. Please try again.",
+        description: isProfileEdit 
+          ? "Failed to update your profile and plan. Please try again."
+          : "Failed to save your profile. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -333,58 +355,113 @@ export default function Onboarding() {
 
       case 2:
         return (
-          <div className="space-y-6 animate-fade-in">
+          <div className="space-y-8">
             <div className="space-y-4">
               <Label className="text-base font-medium">What's your primary goal?</Label>
-              <RadioGroup value={data.primaryGoal} onValueChange={(value) => updateData("primaryGoal", value)} className="space-y-3">
-                {[
-                  { value: "weight-loss", label: "Weight Loss", desc: "Lose weight in a healthy way" },
-                  { value: "maintenance", label: "Weight Maintenance", desc: "Maintain current weight" },
-                  { value: "muscle-gain", label: "Muscle Gain", desc: "Build muscle and strength" },
-                  { value: "general-health", label: "General Health", desc: "Improve overall wellness" },
-                ].map((option) => (
-                  <div key={option.value} className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-accent transition-colors duration-200">
-                    <RadioGroupItem value={option.value} id={option.value} />
-                    <div className="flex-1">
-                      <Label htmlFor={option.value} className="font-medium cursor-pointer">{option.label}</Label>
-                      <p className="text-sm text-muted-foreground">{option.desc}</p>
-                    </div>
-                  </div>
-                ))}
+              <RadioGroup 
+                value={data.primaryGoal} 
+                onValueChange={(value) => updateData("primaryGoal", value)}
+                className="space-y-3"
+              >
+                <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                  <RadioGroupItem value="weight-loss" id="weight-loss" />
+                  <Label htmlFor="weight-loss" className="flex-1 cursor-pointer">
+                    <div className="font-medium">Weight Loss</div>
+                    <div className="text-sm text-muted-foreground">Reduce body weight and body fat</div>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                  <RadioGroupItem value="muscle-gain" id="muscle-gain" />
+                  <Label htmlFor="muscle-gain" className="flex-1 cursor-pointer">
+                    <div className="font-medium">Muscle Gain</div>
+                    <div className="text-sm text-muted-foreground">Build lean muscle mass</div>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 rounded-lg border hover:bg-accent/50 transition-colors">
+                  <RadioGroupItem value="maintenance" id="maintenance" />
+                  <Label htmlFor="maintenance" className="flex-1 cursor-pointer">
+                    <div className="font-medium">Maintenance</div>
+                    <div className="text-sm text-muted-foreground">Maintain current weight and health</div>
+                  </Label>
+                </div>
               </RadioGroup>
             </div>
 
             {data.primaryGoal && data.primaryGoal !== "maintenance" && (
-              <div className="space-y-2 animate-fade-in">
-                <Label htmlFor="targetWeight">Target Weight ({data.weightUnit})</Label>
-                <Input
-                  id="targetWeight"
-                  placeholder="Enter target weight"
-                  value={data.targetWeight}
-                  onChange={(e) => updateData("targetWeight", e.target.value)}
-                  className="transition-all duration-200 focus:ring-2"
-                />
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <Label className="text-base font-medium">Timeline Preference</Label>
-              <RadioGroup value={data.timeline} onValueChange={(value) => updateData("timeline", value)} className="space-y-3">
-                {[
-                  { value: "aggressive", label: "Aggressive", desc: "Faster results, more intensive" },
-                  { value: "moderate", label: "Moderate", desc: "Balanced approach" },
-                  { value: "gradual", label: "Gradual", desc: "Slow and steady progress" },
-                ].map((option) => (
-                  <div key={option.value} className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-accent transition-colors duration-200">
-                    <RadioGroupItem value={option.value} id={option.value} />
-                    <div className="flex-1">
-                      <Label htmlFor={option.value} className="font-medium cursor-pointer">{option.label}</Label>
-                      <p className="text-sm text-muted-foreground">{option.desc}</p>
-                    </div>
+              <>
+                <div className="space-y-4">
+                  <Label htmlFor="targetWeight" className="text-base font-medium">
+                    {data.primaryGoal === "weight-loss" ? "Target Weight" : "Target Weight (Optional)"}
+                  </Label>
+                  <div className="flex space-x-2">
+                    <Input
+                      id="targetWeight"
+                      placeholder={data.primaryGoal === "weight-loss" ? "e.g., 150" : "e.g., 180"}
+                      value={data.targetWeight}
+                      onChange={(e) => updateData("targetWeight", e.target.value)}
+                      className="flex-1"
+                    />
+                    <Badge variant="outline" className="px-3 py-2">
+                      {data.weightUnit}
+                    </Badge>
                   </div>
-                ))}
-              </RadioGroup>
-            </div>
+                </div>
+
+                <div className="space-y-4">
+                  <Label className="text-base font-medium">Timeline & Approach</Label>
+                  <Select value={data.timeline} onValueChange={(value) => updateData("timeline", value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select your preferred timeline" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {data.primaryGoal === "weight-loss" ? (
+                        <>
+                          <SelectItem value="aggressive">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Aggressive (2-4 months)</span>
+                              <span className="text-xs text-muted-foreground">Faster results, requires more discipline</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="moderate">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Moderate (4-8 months)</span>
+                              <span className="text-xs text-muted-foreground">Balanced and sustainable approach</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="gradual">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Gradual (8-12 months)</span>
+                              <span className="text-xs text-muted-foreground">Slow and steady, easiest to maintain</span>
+                            </div>
+                          </SelectItem>
+                        </>
+                      ) : (
+                        <>
+                          <SelectItem value="aggressive">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Aggressive (3-6 months)</span>
+                              <span className="text-xs text-muted-foreground">Faster gains, higher calorie surplus</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="moderate">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Moderate (6-12 months)</span>
+                              <span className="text-xs text-muted-foreground">Balanced approach with quality gains</span>
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="gradual">
+                            <div className="flex flex-col items-start">
+                              <span className="font-medium">Gradual (12-18 months)</span>
+                              <span className="text-xs text-muted-foreground">Highest quality gains, minimal fat gain</span>
+                            </div>
+                          </SelectItem>
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
           </div>
         )
 
@@ -414,10 +491,16 @@ export default function Onboarding() {
         <Card className="shadow-xl border-0 bg-card/95 backdrop-blur">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              Hi {authUser.name || 'there'}! 👋
+              {isProfileEdit 
+                ? `Updating Your Plan, ${authUser.name || 'there'}! 🔄`
+                : `Hi ${authUser.name || 'there'}! 👋`
+              }
             </CardTitle>
             <CardDescription>
-              Step {currentStep + 1} of {steps.length}: {steps[currentStep].title}
+              {isProfileEdit 
+                ? `Step ${currentStep + 1} of ${steps.length}: Update your ${steps[currentStep].title}`
+                : `Step ${currentStep + 1} of ${steps.length}: ${steps[currentStep].title}`
+              }
             </CardDescription>
             <Progress value={(currentStep + 1) * (100 / steps.length)} className="mt-4" />
           </CardHeader>
@@ -466,7 +549,7 @@ export default function Onboarding() {
                 {isLoading 
                   ? "Saving..." 
                   : currentStep === steps.length - 1 
-                    ? "Complete Setup" 
+                    ? (isProfileEdit ? "Update Plan" : "Complete Setup")
                     : "Next"
                 }
                 {!isLoading && <ChevronRight className="h-4 w-4 ml-2" />}

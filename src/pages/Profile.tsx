@@ -173,9 +173,13 @@ export default function Profile() {
   }
 
   const handleRegeneratePlan = () => {
-    // This will trigger plan regeneration based on current profile data
-    console.log("Regenerating nutrition plan with current data:", profile)
-    // TODO: Implement plan regeneration logic
+    // Navigate to onboarding with current profile data for editing
+    navigate("/onboarding", { 
+      state: { 
+        isProfileEdit: true,
+        existingData: profile 
+      }
+    })
   }
 
   const handleSignOut = async () => {
@@ -540,13 +544,30 @@ export default function Profile() {
     return labels[goal as keyof typeof labels] || goal
   }
 
-  const getTimelineLabel = (timeline: string) => {
-    const labels = {
-      "aggressive": "Aggressive",
-      "moderate": "Moderate",
-      "gradual": "Gradual"
+  const getTimelineLabel = (timeline: string, primaryGoal?: string) => {
+    const timelineMap: Record<string, { weightLoss: string; muscleGain: string; maintenance: string }> = {
+      aggressive: {
+        weightLoss: "Aggressive (2-4 months)",
+        muscleGain: "Aggressive (3-6 months)", 
+        maintenance: "Aggressive"
+      },
+      moderate: {
+        weightLoss: "Moderate (4-8 months)",
+        muscleGain: "Moderate (6-12 months)",
+        maintenance: "Moderate"
+      },
+      gradual: {
+        weightLoss: "Gradual (8-12 months)", 
+        muscleGain: "Gradual (12-18 months)",
+        maintenance: "Gradual"
+      }
     }
-    return labels[timeline as keyof typeof labels] || timeline
+
+    const goalKey = primaryGoal === "weight-loss" ? "weightLoss" 
+                    : primaryGoal === "muscle-gain" ? "muscleGain" 
+                    : "maintenance"
+
+    return timelineMap[timeline]?.[goalKey] || timeline.charAt(0).toUpperCase() + timeline.slice(1)
   }
 
   if (isLoading) {
@@ -772,7 +793,7 @@ export default function Profile() {
                 </div>
               )}
               <div className="text-center">
-                <Badge variant="secondary" className="mb-2">{getTimelineLabel(profile.timeline)}</Badge>
+                <Badge variant="secondary" className="mb-2">{getTimelineLabel(profile.timeline, profile.primaryGoal)}</Badge>
                 <p className="text-sm text-muted-foreground">Timeline</p>
               </div>
             </div>
