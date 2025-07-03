@@ -162,6 +162,219 @@ Before getting started, ensure you have:
    ALTER TABLE food_logs ENABLE ROW LEVEL SECURITY;
    ALTER TABLE water_logs ENABLE ROW LEVEL SECURITY;
    ALTER TABLE weight_logs ENABLE ROW LEVEL SECURITY;
+
+   -- RLS Policies for users table
+CREATE POLICY "Users can read their own user row"
+  ON users
+  FOR SELECT
+  USING (email = auth.email());
+
+CREATE POLICY "Users can update their own user row"
+  ON users
+  FOR UPDATE
+  USING (email = auth.email())
+  WITH CHECK (email = auth.email());
+
+CREATE POLICY "Users can delete their own user row"
+  ON users
+  FOR DELETE
+  USING (email = auth.email());
+
+CREATE POLICY "Users can insert their own user row"
+  ON users
+  FOR INSERT
+  WITH CHECK (email = auth.email());
+
+-- RLS Policies for nutrition_plans
+CREATE POLICY "Users can read their own nutrition plans"
+  ON nutrition_plans
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = nutrition_plans.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can update their own nutrition plans"
+  ON nutrition_plans
+  FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = nutrition_plans.user_id
+        AND u.email = auth.email()
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = nutrition_plans.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can delete their own nutrition plans"
+  ON nutrition_plans
+  FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = nutrition_plans.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can insert their own nutrition plans"
+  ON nutrition_plans
+  FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = nutrition_plans.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+-- RLS Policies for food_logs
+CREATE POLICY "Users can read their own food logs"
+  ON food_logs
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = food_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can update their own food logs"
+  ON food_logs
+  FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = food_logs.user_id
+        AND u.email = auth.email()
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = food_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can delete their own food logs"
+  ON food_logs
+  FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = food_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can insert their own food logs"
+  ON food_logs
+  FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = food_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+-- RLS Policies for water_logs
+CREATE POLICY "Users can read their own water logs"
+  ON water_logs
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = water_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can delete their own water logs"
+  ON water_logs
+  FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = water_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can insert their own water logs"
+  ON water_logs
+  FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = water_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+-- RLS Policies for weight_logs
+CREATE POLICY "Users can read their own weight logs"
+  ON weight_logs
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = weight_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can delete their own weight logs"
+  ON weight_logs
+  FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = weight_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can insert their own weight logs"
+  ON weight_logs
+  FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = weight_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+
+CREATE POLICY "Users can update their own weight logs"
+  ON weight_logs
+  FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = weight_logs.user_id
+        AND u.email = auth.email()
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = weight_logs.user_id
+        AND u.email = auth.email()
+    )
+  );
+  
    ```
 
 5. **Start the development server**
