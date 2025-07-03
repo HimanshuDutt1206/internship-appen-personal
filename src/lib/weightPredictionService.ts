@@ -53,6 +53,7 @@ interface WeightLog {
 interface WeightPrediction {
   date: string
   weight: number
+  motivationalMessage?: string
 }
 
 interface PredictionData {
@@ -325,7 +326,7 @@ IMPORTANT:
     return prompt
   }
 
-  async generateWeightPredictions(userId: number): Promise<WeightPrediction[]> {
+  async generateWeightPredictions(userId: number, userProfile: any): Promise<{ predictions: WeightPrediction[]; motivationalMessage: string }> {
     try {
       // Check if API key is available
       if (!import.meta.env.VITE_GOOGLE_AI_API_KEY) {
@@ -343,33 +344,32 @@ IMPORTANT:
         throw new Error('Need at least one weight log to generate predictions')
       }
 
-      // Create the prompt
-      const prompt = this.createPredictionPrompt(data)
-      console.log('Generated prompt for AI:', prompt.substring(0, 500) + '...')
+      // Create the prediction prompt
+      const predictionPrompt = this.createPredictionPrompt(data)
+      console.log('Generated prompt for AI (predictions):', predictionPrompt.substring(0, 500) + '...')
 
-      // Call Google AI API
+      // Call Google AI API for predictions
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
       
-      console.log('Calling Google AI API...')
-      const result = await model.generateContent(prompt)
-      const response = await result.response
-      const text = response.text()
+      console.log('Calling Google AI API for predictions...')
+      const predictionResult = await model.generateContent(predictionPrompt)
+      const predictionResponse = await predictionResult.response
+      const predictionText = predictionResponse.text()
       
-      console.log('AI Response:', text)
+      console.log('AI Prediction Response:', predictionText)
 
-      // Parse the JSON response
+      // Parse the JSON response for predictions
       let predictions: WeightPrediction[]
       try {
-        // Clean the response to extract just the JSON
-        const jsonMatch = text.match(/\[[\s\S]*\]/)
+        const jsonMatch = predictionText.match(/\[[\s\S]*\]/)
         if (!jsonMatch) {
-          console.error('Full AI response:', text)
-          throw new Error('No valid JSON found in response. The AI may have returned text instead of JSON.')
+          console.error('Full AI prediction response:', predictionText)
+          throw new Error('No valid JSON found in prediction response. The AI may have returned text instead of JSON.')
         }
         predictions = JSON.parse(jsonMatch[0])
       } catch (parseError) {
-        console.error('Failed to parse AI response:', text)
-        throw new Error(`Invalid response format from AI: ${parseError}`)
+        console.error('Failed to parse AI prediction response:', predictionText)
+        throw new Error(`Invalid response format from AI (predictions): ${parseError}`)
       }
 
       // Validate predictions
@@ -377,7 +377,6 @@ IMPORTANT:
         throw new Error('No predictions returned from AI')
       }
 
-      // Validate each prediction
       const validPredictions = predictions.filter(pred => {
         return pred.date && 
                typeof pred.weight === 'number' && 
@@ -390,12 +389,53 @@ IMPORTANT:
       }
 
       console.log(`Successfully generated ${validPredictions.length} weight predictions`)
-      return validPredictions
+
+      // Determine if on track for target weight
+      const day31Prediction = validPredictions.find(pred => {
+        const dateDiff = differenceInDays(parseISO(pred.date), parseISO(data.nutritionPlan.created_at));
+        return dateDiff === 31;
+      });
+
+      let onTrack = false;
+      if (day31Prediction && userProfile?.target_weight) {
+        const targetWeightNum = parseFloat(userProfile.target_weight);
+        // Assuming user's goal is weight loss, check if predicted weight is <= target weight
+        // Or if the goal is weight gain, check if predicted weight is >= target weight
+        if (data.user.primary_goal === 'Lose weight') {
+          onTrack = day31Prediction.weight <= targetWeightNum;
+        } else if (data.user.primary_goal === 'Gain weight') {
+          onTrack = day31Prediction.weight >= targetWeightNum;
+        } else { // Maintain weight
+          onTrack = Math.abs(day31Prediction.weight - targetWeightNum) < 2; // within 2 units
+        }
+      }
+
+      // Generate motivational message
+      const motivationalPrompt = `
+You are a motivational fitness coach AI. Based on the user's weight prediction data, generate a concise motivational message (maximum 2-3 sentences).
+
+User's Primary Goal: ${data.user.primary_goal}
+User's Target Weight: ${userProfile?.target_weight} ${userProfile?.weight_unit}
+Predicted Weight on Day 31: ${day31Prediction?.weight?.toFixed(1) || 'N/A'} ${userProfile?.weight_unit || ''}
+Are they on track to reach their goal by Day 31: ${onTrack ? 'Yes' : 'No'}
+
+Generate a motivational message. If they are on track, tell them they are on track to reach their goal, congratulate them and motivate them to keep going at this good pace. If they are not on track to reach their goal, motivate them to work harder so that they can reach their goal in the time frame.
+`
+      console.log('Generated prompt for AI (motivational message):', motivationalPrompt.substring(0, 500) + '...')
+
+      const motivationalModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
+      console.log('Calling Google AI API for motivational message...')
+      const motivationalResult = await motivationalModel.generateContent(motivationalPrompt)
+      const motivationalResponse = await motivationalResult.response
+      const motivationalText = motivationalResponse.text()
+
+      console.log('AI Motivational Message Response:', motivationalText)
+
+      return { predictions: validPredictions, motivationalMessage: motivationalText };
 
     } catch (error: any) {
-      console.error('Error generating weight predictions:', error)
+      console.error('Error generating weight predictions or motivational message:', error)
       
-      // Provide more specific error messages
       if (error.message?.includes('API_KEY_INVALID')) {
         throw new Error('Invalid Google AI API key. Please check your VITE_GOOGLE_AI_API_KEY.')
       } else if (error.message?.includes('PERMISSION_DENIED')) {

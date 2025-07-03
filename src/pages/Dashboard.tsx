@@ -94,6 +94,7 @@ export default function Dashboard() {
   const [isPredicting, setIsPredicting] = useState(false)
   const [predictionError, setPredictionError] = useState<string | null>(null)
   const [predictions, setPredictions] = useState<WeightPrediction[]>([])
+  const [motivationalMessage, setMotivationalMessage] = useState<string | null>(null)
 
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -473,18 +474,17 @@ export default function Dashboard() {
       setIsPredicting(true)
       setPredictionError(null)
 
-      const weightPredictions = await weightPredictionService.generateWeightPredictions(
-        currentUserId
+      const { predictions: newPredictions, motivationalMessage } = await weightPredictionService.generateWeightPredictions(
+        currentUserId,
+        userProfile // Pass userProfile here
       )
-      setPredictions(weightPredictions)
+      setPredictions(newPredictions)
 
       // Reload weight data with the new predictions
-      await loadWeightProgress(currentUserId, userProfile, planData, weightPredictions)
+      await loadWeightProgress(currentUserId, userProfile, planData, newPredictions)
 
-      toast({
-        title: "Predictions Generated!",
-        description: "AI has predicted your weight progress based on your data.",
-      })
+      setMotivationalMessage(motivationalMessage); // Set the motivational message state
+
     } catch (error: any) {
       console.error('Error generating predictions:', error)
       setPredictionError(error.message || 'Failed to generate predictions')
@@ -597,6 +597,11 @@ export default function Dashboard() {
             <CardDescription>Your weight journey over 31 days from plan start</CardDescription>
           </CardHeader>
           <CardContent>
+            {motivationalMessage && (
+              <div className="mb-4 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xl font-semibold text-center">
+                {motivationalMessage}
+              </div>
+            )}
             {weightData.length > 0 ? (
               <div className="space-y-4">
                 {/* Legend */}
