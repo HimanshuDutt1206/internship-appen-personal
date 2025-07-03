@@ -159,9 +159,82 @@ export default function Profile() {
     setEditedProfile(prev => ({ ...prev, [field]: value }))
   }
 
-  const saveProfile = () => {
+  const saveProfile = async() => {
+    if (!currentUserId) return
+    setIsLoading(true)
+    try {
+      // Prepare update data (exclude email)
+      const updateData = {
+        name: editedProfile.name,
+        age: parseInt(editedProfile.age, 10),
+        gender: editedProfile.gender,
+        height: editedProfile.height,
+        height_unit: editedProfile.heightUnit,
+        weight: editedProfile.weight,
+        weight_unit: editedProfile.weightUnit,
+        activity_level: editedProfile.activityLevel,
+        primary_goal: editedProfile.primaryGoal,
+        target_weight: editedProfile.targetWeight
+      }
+      const { error } = await supabase
+        .from('users')
+        .update(updateData)
+        .eq('id', currentUserId)
+
+      if (error) throw error
+
+      // If weight or weightUnit changed, insert a new weight log
+      if (
+        profile.weight !== editedProfile.weight ||
+        profile.weightUnit !== editedProfile.weightUnit
+      ) {
+        const today = new Date()
+        const yyyy = today.getFullYear()
+        const mm = String(today.getMonth() + 1).padStart(2, '0')
+        const dd = String(today.getDate()).padStart(2, '0')
+        const todayStr = `${yyyy}-${mm}-${dd}`
+        const { error: insertError } = await supabase
+          .from('weight_logs')
+          .insert([
+            {
+              user_id: currentUserId,
+              weight: parseFloat(editedProfile.weight),
+              weight_unit: editedProfile.weightUnit,
+              logged_date: todayStr,
+              notes: null
+            }
+          ])
+        if (!insertError) {
+          toast({
+            title: "Weight Log Added",
+            description: "A new weight log was created for today.",
+          })
+        } else {
+          toast({
+            title: "Warning",
+            description: "Profile updated, but failed to create a new weight log.",
+            variant: "destructive",
+          })
+        }
+        // Reload weight logs to update UI
+        await loadWeightLogs(currentUserId)
+      }
     setProfile(editedProfile)
     setIsEditing(false)
+    toast({
+        title: "Profile Updated",
+        description: "Your profile has been updated successfully.",
+      })
+    } catch (error) {
+      console.error('Error updating profile:', error)
+      toast({
+        title: "Error",
+        description: "Failed to update profile. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const cancelEdit = () => {
@@ -627,8 +700,8 @@ export default function Profile() {
                     <Label>Email</Label>
                     <Input
                       value={editedProfile.email}
-                      onChange={(e) => updateEditedProfile("email", e.target.value)}
-                      className="transition-all duration-200 focus:ring-2"
+                      readOnly
+                      className="transition-all duration-200 focus:ring-2 bg-muted cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -989,7 +1062,7 @@ export default function Profile() {
                     min="1"
                     step="0.1"
                   />
-                  <Select value={newWeightUnit} onValueChange={setNewWeightUnit}>
+                  <Select value={newWeightUnit} onValueChange={(value) => setNewWeightUnit(value as 'lbs' | 'kg')}>
                     <SelectTrigger className="w-20">
                       <SelectValue />
                     </SelectTrigger>
