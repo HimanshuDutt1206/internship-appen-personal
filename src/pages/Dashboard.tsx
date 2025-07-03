@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
@@ -19,13 +18,28 @@ import {
   Gauge,
   Trash2,
   Clock,
-  User
+  User,
+  Scale,
+  Loader2,
 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import Navigation from "@/components/Navigation"
-import { supabase, type NutritionPlan, type FoodLog, type WaterLog } from "@/lib/supabase"
+import { supabase, type NutritionPlan, type FoodLog, type WaterLog, type WeightLog } from "@/lib/supabase"
 import { useToast } from "@/hooks/use-toast"
 import { useNavigate } from "react-router-dom"
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  ReferenceLine,
+} from "recharts"
+import { format, differenceInDays } from "date-fns"
+import { weightPredictionService, type WeightPrediction } from "@/lib/weightPredictionService"
 
 interface NutritionTarget {
   calories: number
@@ -41,6 +55,14 @@ interface DailyIntake {
   carbs: number
   fats: number
   water: number // current intake in ml
+}
+
+interface WeightChartData {
+  date: string
+  weight: number
+  formattedDate: string
+  actualWeight?: number
+  predictedWeight?: number
 }
 
 export default function Dashboard() {
@@ -65,17 +87,25 @@ export default function Dashboard() {
     water: 0
   })
 
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [weightData, setWeightData] = useState<WeightChartData[]>([])
+  const [userProfile, setUserProfile] = useState<any>(null)
+  const [planData, setPlanData] = useState<any>(null) // To store the fetched nutrition plan
+  const [isPredicting, setIsPredicting] = useState(false)
+  const [predictionError, setPredictionError] = useState<string | null>(null)
+  const [predictions, setPredictions] = useState<WeightPrediction[]>([])
+
   const { toast } = useToast()
   const navigate = useNavigate()
 
-  const loadNutritionPlan = async () => {
+  const loadDashboardData = async () => {
     try {
       setIsLoading(true)
       
       // Get the most recent user (since we don't have auth)
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id')
+        .select('*') // Select all to get name, weight_unit etc.
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
@@ -89,8 +119,11 @@ export default function Dashboard() {
         throw userError
       }
 
+      setCurrentUserId(userData.id)
+      setUserProfile(userData)
+
       // Get the nutrition plan for this user
-      const { data: planData, error: planError } = await supabase
+      const { data: nutritionPlanData, error: planError } = await supabase
         .from('nutrition_plans')
         .select('*')
         .eq('user_id', userData.id)
@@ -105,24 +138,28 @@ export default function Dashboard() {
         throw planError
       }
 
+      setPlanData(nutritionPlanData) // Store the nutrition plan
+
       // Update targets with real data
       setTargets({
-        calories: planData.target_calories,
-        protein: planData.protein_grams,
-        carbs: planData.carbs_grams,
-        fats: planData.fats_grams,
-        water: planData.water_target // Already in ml from updated calculator
+        calories: nutritionPlanData.target_calories,
+        protein: nutritionPlanData.protein_grams,
+        carbs: nutritionPlanData.carbs_grams,
+        fats: nutritionPlanData.fats_grams,
+        water: nutritionPlanData.water_target // Already in ml from updated calculator
       })
 
       // Load today's food consumption and water intake
       await loadTodaysFoodConsumption(userData.id)
       await loadTodaysWaterConsumption(userData.id)
 
+      // Load weight progress data
+      await loadWeightProgress(userData.id, userData, nutritionPlanData)
     } catch (error) {
-      console.error('Error loading nutrition plan:', error)
+      console.error('Error loading dashboard data:', error)
       toast({
         title: "Error",
-        description: "Failed to load your nutrition plan.",
+        description: "Failed to load dashboard data. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -325,8 +362,144 @@ export default function Dashboard() {
     }
   }
 
+  // Weight Progress Chart Logic
+  const loadWeightProgress = async (
+    userId: number,
+    userProfileData: any,
+    nutritionPlanData: any,
+    predictionData: WeightPrediction[] = predictions // Use existing predictions if not new ones are provided
+  ) => {
+    try {
+      const { data: weightLogs, error } = await supabase
+        .from('weight_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('logged_date', { ascending: true })
+
+      if (error) throw error
+
+      // Generate 31-day timeline
+      const timelineData = generate31DayTimeline(userProfileData, nutritionPlanData)
+
+      // Add actual weight logs and predictions to timeline
+      const combinedData = mergeActualAndEstimatedData(
+        weightLogs || [],
+        timelineData,
+        predictionData
+      )
+
+      setWeightData(combinedData)
+    } catch (error) {
+      console.error('Error loading weight progress:', error)
+    }
+  }
+
+  const generate31DayTimeline = (userProfile: any, nutritionPlan: any) => {
+    if (!userProfile || !nutritionPlan) return []
+
+    const planCreatedDate = new Date(nutritionPlan.created_at)
+
+    // Generate 31-day timeline starting from plan creation date (day 0)
+    const timelineData: WeightChartData[] = []
+
+    // Generate data points for days 0-31
+    for (let day = 0; day <= 31; day++) {
+      const currentDate = new Date(planCreatedDate)
+      currentDate.setDate(currentDate.getDate() + day)
+
+      timelineData.push({
+        date: currentDate.toISOString().split('T')[0],
+        weight: 0, // Will be filled by actual weights only
+        formattedDate: `Day ${day}`,
+      })
+    }
+
+    return timelineData
+  }
+
+  const mergeActualAndEstimatedData = (
+    actualLogs: WeightLog[],
+    timelineData: WeightChartData[],
+    predictionData: WeightPrediction[] = []
+  ) => {
+    // Create a map of dates for efficient lookup
+    const dateMap = new Map<string, WeightChartData>()
+
+    // Add timeline data first (31-day structure)
+    timelineData.forEach((data) => {
+      dateMap.set(data.date, data)
+    })
+
+    // Add actual weight logs to the timeline
+    actualLogs.forEach((log) => {
+      const dateKey = log.logged_date
+      const existing = dateMap.get(dateKey)
+
+      if (existing) {
+        // Update existing timeline entry with actual weight
+        dateMap.set(dateKey, {
+          ...existing,
+          weight: log.weight,
+          actualWeight: log.weight,
+        })
+      }
+      // Note: We don't add logs outside the 31-day timeline
+    })
+
+    // Add predicted weights to the timeline
+    predictionData.forEach((prediction) => {
+      const existing = dateMap.get(prediction.date)
+      if (existing) {
+        // Update existing timeline entry with predicted weight
+        dateMap.set(prediction.date, {
+          ...existing,
+          predictedWeight: prediction.weight,
+        })
+      }
+    })
+
+    // Convert back to array and sort by date
+    const sortedData = Array.from(dateMap.values()).sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    )
+
+    return sortedData
+  }
+
+  const handlePredictWeight = async () => {
+    if (!currentUserId || !userProfile || !planData) return
+
+    try {
+      setIsPredicting(true)
+      setPredictionError(null)
+
+      const weightPredictions = await weightPredictionService.generateWeightPredictions(
+        currentUserId
+      )
+      setPredictions(weightPredictions)
+
+      // Reload weight data with the new predictions
+      await loadWeightProgress(currentUserId, userProfile, planData, weightPredictions)
+
+      toast({
+        title: "Predictions Generated!",
+        description: "AI has predicted your weight progress based on your data.",
+      })
+    } catch (error: any) {
+      console.error('Error generating predictions:', error)
+      setPredictionError(error.message || 'Failed to generate predictions')
+      toast({
+        title: 'Prediction Failed',
+        description: error.message || 'Failed to generate weight predictions. Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsPredicting(false)
+    }
+  }
+
   useEffect(() => {
-    loadNutritionPlan()
+    loadDashboardData()
   }, [])
 
   const calculatePercentage = (current: number, target: number) => {
@@ -413,6 +586,222 @@ export default function Dashboard() {
           </div>
           <ThemeToggle />
         </div>
+
+        {/* Weight Progress Chart */}
+        <Card className="mb-6 transition-all duration-300 hover:shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Scale className="h-5 w-5" />
+              <span>Weight Progress</span>
+            </CardTitle>
+            <CardDescription>Your weight journey over 31 days from plan start</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {weightData.length > 0 ? (
+              <div className="space-y-4">
+                {/* Legend */}
+                <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-primary rounded-full"></div>
+                    <span className="text-muted-foreground">Logged Weight</span>
+                  </div>
+                  {predictions.length > 0 && (
+                    <div className="flex items-center space-x-2">
+                      <div
+                        className="w-3 h-0.5 bg-orange-500 rounded"
+                        style={{ borderStyle: "dashed", borderWidth: "1px", borderColor: "rgb(249 115 22)" }}
+                      ></div>
+                      <span className="text-muted-foreground">AI Predicted Weight</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={weightData} margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                      <XAxis
+                        dataKey="formattedDate"
+                        tick={{ fontSize: 11 }}
+                        interval={Math.max(1, Math.floor(weightData.length / 8))}
+                        angle={-45}
+                        textAnchor="end"
+                        height={60}
+                      />
+                      <YAxis 
+                        domain={[
+                          Math.min(
+                            ...weightData.map(d => d.weight || d.actualWeight || d.predictedWeight).filter(Boolean),
+                            userProfile?.target_weight ? parseFloat(userProfile.target_weight) : Infinity
+                          ) - 2,
+                          Math.max(
+                            ...weightData.map(d => d.weight || d.actualWeight || d.predictedWeight).filter(Boolean),
+                            userProfile?.target_weight ? parseFloat(userProfile.target_weight) : -Infinity
+                          ) + 2,
+                        ]}
+                        tick={{ fontSize: 11 }}
+                        label={{ 
+                          value: `Weight (${userProfile?.weight_unit || 'kg'})`, 
+                          angle: -90, 
+                          position: 'insideLeft' 
+                        }}
+                      />
+                      <Tooltip
+                        labelFormatter={(label, payload) => {
+                          if (payload && payload[0]) {
+                            const data = payload[0].payload
+                            return format(new Date(data.date), "MMMM d, yyyy")
+                          }
+                          return label
+                        }}
+                        formatter={(value: any, name: any) => {
+                          if (name === "actualWeight") {
+                            return [`${value?.toFixed(1)} ${userProfile?.weight_unit || "kg"}`, "Logged Weight"]
+                          } else if (name === "predictedWeight") {
+                            return [`${value?.toFixed(1)} ${userProfile?.weight_unit || "kg"}`, "AI Predicted Weight"]
+                          }
+                          return [`${value?.toFixed(1)} ${userProfile?.weight_unit || "kg"}`, "Weight"]
+                        }}
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--card))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "8px",
+                        }}
+                        filter={(label, payload) => {
+                          // Only show tooltip for data points that have actual values
+                          return payload && payload.some((p) => p.value !== null && p.value !== undefined && p.value > 0)
+                        }}
+                      />
+
+                      {/* Target Weight Line */}
+                      {userProfile?.target_weight && (
+                        <ReferenceLine
+                          y={parseFloat(userProfile.target_weight)}
+                          stroke="hsl(var(--primary))"
+                          strokeDasharray="3 3"
+                          strokeOpacity={0.7}
+                          label={{
+                            value: `Target: ${userProfile.target_weight} ${userProfile.weight_unit}`,
+                            position: "top",
+                            fill: "hsl(var(--primary))",
+                            fontSize: 12,
+                          }}
+                        />
+                      )}
+
+                      {/* Predicted Weight Line */}
+                      {predictions.length > 0 && (
+                        <Line
+                          type="monotone"
+                          dataKey="predictedWeight"
+                          stroke="#f97316"
+                          strokeWidth={2}
+                          strokeDasharray="8 4"
+                          dot={{
+                            fill: "#f97316",
+                            strokeWidth: 1,
+                            r: 4,
+                          }}
+                          connectNulls={true}
+                          name="predictedWeight"
+                        />
+                      )}
+
+                      {/* Actual Weight Line - render last to appear on top */}
+                      <Line
+                        type="monotone"
+                        dataKey="actualWeight"
+                        stroke="hsl(var(--primary))"
+                        strokeWidth={3}
+                        dot={{
+                          fill: "hsl(var(--primary))",
+                          strokeWidth: 2,
+                          r: 6,
+                          stroke: "hsl(var(--background))",
+                        }}
+                        connectNulls={true}
+                        name="actualWeight"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Weight Prediction Button */}
+                <div className="pt-4 border-t">
+                  <div className="flex flex-col items-center space-y-2">
+                    {weightData.find((d) => d.actualWeight) ? (
+                      <Button
+                        onClick={handlePredictWeight}
+                        disabled={isPredicting}
+                        className="w-full max-w-sm transition-all duration-200 hover:scale-105"
+                        variant={predictions.length > 0 ? "outline" : "default"}
+                      >
+                        {isPredicting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Generating Predictions...
+                          </>
+                        ) : predictions.length > 0 ? (
+                          "Update Predictions"
+                        ) : (
+                          "🤖 Predict Weight Progress"
+                        )}
+                      </Button>
+                    ) : (
+                      <div className="text-center text-sm text-muted-foreground">
+                        Log at least one weight to generate AI predictions
+                      </div>
+                    )}
+
+                    {predictionError && (
+                      <div className="text-center text-sm text-destructive">
+                        {predictionError}
+                      </div>
+                    )}
+
+                    {predictions.length > 0 && (
+                      <div className="text-center text-xs text-muted-foreground">
+                        Showing {predictions.length} AI-predicted days
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground">Starting Weight</p>
+                    <p className="text-lg font-semibold">
+                      {userProfile?.weight} {userProfile?.weight_unit}
+                    </p>
+                  </div>
+                  {weightData.find((d) => d.actualWeight) && (
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground">Latest Weight</p>
+                      <p className="text-lg font-semibold">
+                        {weightData.filter((d) => d.actualWeight).pop()?.actualWeight?.toFixed(1)}{" "}
+                        {userProfile?.weight_unit}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="h-64 flex items-center justify-center">
+                <div className="text-center">
+                  <Scale className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No weight logs available</p>
+                  <p className="text-sm text-muted-foreground">
+                    Start logging your weight to see your progress over the 31-day timeline
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate("/profile")}>
+                    Go to Profile
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Today's Goals */}
         <Card className="mb-6 transition-all duration-300 hover:shadow-lg border-emerald-100 dark:border-emerald-900/50">

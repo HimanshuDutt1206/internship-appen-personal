@@ -4,7 +4,7 @@ import { Progress as ProgressBar } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, ReferenceLine } from "recharts"
 import { 
   TrendingUp, 
   TrendingDown,
@@ -601,7 +601,16 @@ export default function Progress() {
                         height={60}
                       />
                       <YAxis 
-                        domain={['dataMin - 2', 'dataMax + 2']}
+                        domain={[
+                          Math.min(
+                            ...weightData.map(d => d.weight || d.actualWeight || d.predictedWeight).filter(Boolean),
+                            userProfile?.target_weight ? parseFloat(userProfile.target_weight) : Infinity
+                          ) - 2,
+                          Math.max(
+                            ...weightData.map(d => d.weight || d.actualWeight || d.predictedWeight).filter(Boolean),
+                            userProfile?.target_weight ? parseFloat(userProfile.target_weight) : -Infinity
+                          ) + 2,
+                        ]}
                         tick={{ fontSize: 11 }}
                         label={{ 
                           value: `Weight (${userProfile?.weight_unit || 'kg'})`, 
@@ -636,6 +645,22 @@ export default function Progress() {
                         }}
                       />
                       
+                      {/* Target Weight Line */}
+                      {userProfile?.target_weight && (
+                        <ReferenceLine
+                          y={parseFloat(userProfile.target_weight)}
+                          stroke="hsl(var(--primary))"
+                          strokeDasharray="3 3"
+                          strokeOpacity={0.7}
+                          label={{
+                            value: `Target: ${userProfile.target_weight} ${userProfile.weight_unit}`,
+                            position: "top",
+                            fill: "hsl(var(--primary))",
+                            fontSize: 12,
+                          }}
+                        />
+                      )}
+
                       {/* Predicted Weight Line */}
                       {predictions.length > 0 && (
                         <Line 
