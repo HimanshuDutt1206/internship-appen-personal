@@ -151,6 +151,29 @@ export default function Onboarding() {
         userId = newUser.id
       }
 
+      // Log initial weight if not already logged for today
+      const today = new Date().toISOString().slice(0, 10)
+      const { data: existingWeightLog, error: weightLogCheckError } = await supabase
+        .from('weight_logs')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('logged_date', today)
+        .single()
+      if (!existingWeightLog) {
+        const initialWeight = parseFloat(data.weight)
+        if (!isNaN(initialWeight) && initialWeight > 0) {
+          await supabase.from('weight_logs').insert([
+            {
+              user_id: userId,
+              weight: initialWeight,
+              weight_unit: data.weightUnit,
+              logged_date: today,
+              notes: 'Initial weight at onboarding'
+            }
+          ])
+        }
+      }
+      
       // Generate nutrition plan
       const calculationData = {
         age: parseInt(data.age),
@@ -178,18 +201,18 @@ export default function Onboarding() {
           // Continue with creation even if deletion fails
         }
       }
-
-      // Create new nutrition plan
+      
+      // Create or update nutrition plan (upsert)
       const planData: Omit<NutritionPlan, 'id' | 'created_at' | 'updated_at'> = {
         user_id: userId,
         ...nutritionPlan
       }
 
-      const { error: insertPlanError } = await supabase
+      const { error: upsertPlanError } = await supabase
         .from('nutrition_plans')
-        .insert([planData])
+        .upsert([planData], { onConflict: 'user_id' })
 
-      if (insertPlanError) throw insertPlanError
+      if (upsertPlanError) throw upsertPlanError
 
       // Clean up temporary data
       localStorage.removeItem('tempUserName')
